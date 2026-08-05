@@ -1,0 +1,15 @@
+node_modules
+dist
+server/data
+Scoreboard.iconset
+.vercel
+.DS_Store
+
+# Test screenshots left in photos/ — they contain photos of real people and this
+# repo is public. Delete them, or drop this line once they're replaced with the
+# cast photos you actually want published.
+photos/Screenshot*
+
+# Build outputs — regenerate with `npm run app`
+Scoreboard.html
+Scoreboard.app/

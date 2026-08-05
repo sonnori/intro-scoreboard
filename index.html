@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Scoreboard</title>
+    <meta name="theme-color" content="#07080f" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <main class="board" id="board">
+      <header class="rail">
+        <div class="rail__left">
+          <button class="onair" id="cleanBtn" aria-pressed="false" title="ซ่อนแผงควบคุมสำหรับกล้อง (H)">
+            <i></i>ON AIR
+          </button>
+          <span class="rail__match" id="matchLabel">แมตช์ 1</span>
+          <span class="rail__mode" id="modeLabel" hidden>ออฟไลน์</span>
+        </div>
+
+        <div class="rules" id="rulesPlate">
+          <b id="targetLabel">15</b>
+          <span>แต้มชนะ</span>
+          <em id="deuceLabel">ดิวส์ เปิด</em>
+        </div>
+
+        <div class="rail__right">
+          <button class="chip" id="undoBtn" title="เลิกทำ (⌘Z)" disabled>เลิกทำ</button>
+          <button class="chip" id="soundBtn" aria-pressed="true">เสียง</button>
+          <button class="chip" id="fsBtn">เต็มจอ</button>
+          <button class="chip" id="lockBtn" hidden>ปลดล็อก</button>
+          <button class="chip chip--solid" id="settingsBtn">ตั้งค่า</button>
+        </div>
+      </header>
+
+      <section class="scores">
+        <article class="team team--a" data-team="a">
+          <h2 class="team__name" id="nameA">ทีมสายฟ้า</h2>
+          <div class="team__score" id="scoreA">0</div>
+          <p class="team__state" id="stateA"></p>
+        </article>
+
+        <article class="team team--b" data-team="b">
+          <h2 class="team__name" id="nameB">ทีมพายุ</h2>
+          <div class="team__score" id="scoreB">0</div>
+          <p class="team__state" id="stateB"></p>
+        </article>
+      </section>
+
+      <section class="rosters">
+        <div class="roster" id="rosterA" data-team="a"></div>
+        <div class="roster roster--b" id="rosterB" data-team="b"></div>
+      </section>
+    </main>
+
+    <button class="scrim" id="scrim" tabindex="-1" aria-label="ปิดแผงตั้งค่า"></button>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer__head">
+        <h3>ตั้งค่า</h3>
+        <button class="chip" id="closeDrawer">ปิด</button>
+      </div>
+
+      <div class="drawer__body">
+        <div class="group" data-team="a">
+          <span class="eyebrow">ทีมซ้าย <em>TEAM A</em></span>
+          <label class="field">
+            <span>ชื่อทีม</span>
+            <input type="text" id="inputNameA" maxlength="24" />
+          </label>
+          <div class="field">
+            <span>สีประจำทีม</span>
+            <div class="swatches" id="swatchA"></div>
+          </div>
+        </div>
+
+        <div class="group" data-team="b">
+          <span class="eyebrow">ทีมขวา <em>TEAM B</em></span>
+          <label class="field">
+            <span>ชื่อทีม</span>
+            <input type="text" id="inputNameB" maxlength="24" />
+          </label>
+          <div class="field">
+            <span>สีประจำทีม</span>
+            <div class="swatches" id="swatchB"></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <span class="eyebrow">กติกา <em>RULES</em></span>
+          <label class="field">
+            <span>คะแนนที่ชนะ</span>
+            <div class="stepper">
+              <button type="button" data-step="-1">−</button>
+              <input type="number" id="inputTarget" min="1" max="999" />
+              <button type="button" data-step="1">+</button>
+            </div>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="inputDeuce" />
+            <i></i>
+            <span>
+              เปิดดิวส์
+              <small>ต้องนำห่าง 2 แต้มจึงชนะ</small>
+            </span>
+          </label>
+
+          <label class="field" id="capField">
+            <span>แต้มตัดสิน</span>
+            <div class="stepper">
+              <button type="button" data-cap="-1">−</button>
+              <input type="number" id="inputCap" min="2" max="999" />
+              <button type="button" data-cap="1">+</button>
+            </div>
+          </label>
+          <p class="hint">ถึงแต้มนี้ชนะทันที ไม่ต้องนำ 2 แต้ม ใส่ 0 เพื่อเล่นยาวจนกว่าจะห่าง</p>
+        </div>
+
+        <div class="group">
+          <span class="eyebrow">ชุดการแข่ง <em>PRESETS</em></span>
+          <div class="presets" id="presetList"></div>
+          <div class="row">
+            <input type="text" id="presetName" maxlength="40" placeholder="ชื่อชุด เช่น เทป 12" />
+            <button class="btn" id="savePresetBtn">บันทึกชุดนี้</button>
+          </div>
+          <p class="hint">
+            เก็บชื่อทีม สี ผู้เล่นและกติกาไว้ทั้งชุด เลือกใช้ซ้ำได้ทุกเทป การโหลดชุดจะล้างคะแนนปัจจุบัน
+          </p>
+        </div>
+
+        <div class="group">
+          <span class="eyebrow">แมตช์ <em>MATCH</em></span>
+          <div class="row">
+            <button class="btn" id="resetScores">ล้างคะแนน</button>
+            <button class="btn btn--danger" id="resetAll">เริ่มใหม่ทั้งหมด</button>
+          </div>
+          <p class="hint">ล้างคะแนน เก็บผู้เล่นไว้ เริ่มใหม่ทั้งหมด ลบผู้เล่นและกติกากลับค่าเริ่มต้น</p>
+        </div>
+
+        <div class="group">
+          <span class="eyebrow">คีย์ลัด <em>KEYS</em></span>
+          <ul class="keys">
+            <li><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><span>ให้แต้มทีมซ้าย คนที่ 1–5</span></li>
+            <li><kbd>U</kbd><kbd>I</kbd><kbd>O</kbd><kbd>P</kbd><kbd>[</kbd><span>ให้แต้มทีมขวา คนที่ 1–5</span></li>
+            <li><kbd>⌘</kbd><kbd>Z</kbd><span>เลิกทำแต้มล่าสุด</span></li>
+            <li><kbd>H</kbd><span>สลับโหมดออกอากาศ (ซ่อนปุ่มควบคุม)</span></li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <div class="winner" id="winner" aria-hidden="true">
+      <div class="winner__inner">
+        <span class="winner__eyebrow">ผู้ชนะ</span>
+        <h2 class="winner__name" id="winnerName">—</h2>
+        <div class="winner__score" id="winnerScore">0 – 0</div>
+        <div class="winner__actions">
+          <button class="btn btn--big" id="playAgain">เริ่มเกมใหม่</button>
+          <button class="btn" id="editScore">แก้ไขคะแนน</button>
+        </div>
+      </div>
+    </div>
+
+    <dialog class="sheet" id="playerSheet">
+      <form method="dialog" class="sheet__form" id="playerForm">
+        <h3 id="sheetTitle">เพิ่มผู้เล่น</h3>
+
+        <div class="libpick" id="libPick">
+          <span class="eyebrow">รูปที่เตรียมไว้ <em>PHOTOS</em></span>
+          <div class="lib" id="libList"></div>
+          <p class="hint" id="libEmpty" hidden>
+            ยังไม่มีรูปในโฟลเดอร์ <code>photos/</code> — ลากรูปใส่แล้วสั่ง
+            <code>npm run build</code> ชื่อไฟล์จะกลายเป็นชื่อผู้เล่น
+          </p>
+        </div>
+
+        <div class="crop">
+          <div class="crop__box" id="cropBox">
+            <img id="cropImg" alt="" draggable="false" hidden />
+            <button type="button" class="crop__empty" id="cropEmpty">
+              <b>+</b>
+              <span id="cropEmptyLabel">เลือกไฟล์จากเครื่อง</span>
+            </button>
+          </div>
+          <input
+            type="range"
+            class="crop__zoom"
+            id="cropZoom"
+            min="1"
+            max="4"
+            step="0.01"
+            value="1"
+            aria-label="ซูมรูป"
+            disabled
+          />
+          <p class="hint" id="cropHint">ลากรูปเพื่อจัดตำแหน่ง เลื่อนแถบหรือหมุนสกรอลล์เพื่อซูม</p>
+          <div class="crop__actions">
+            <button type="button" class="btn btn--ghost" id="avatarPick">เลือกไฟล์จากเครื่อง</button>
+            <button type="button" class="btn btn--ghost" id="removePhoto">ลบรูป</button>
+          </div>
+        </div>
+
+        <label class="field field--stack">
+          <span>ชื่อผู้เล่น</span>
+          <input type="text" id="playerName" maxlength="20" required />
+        </label>
+
+        <input type="file" id="photoInput" accept="image/*" hidden />
+        <div class="sheet__actions">
+          <button type="button" class="btn btn--danger" id="deletePlayer">ลบผู้เล่น</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="cancelPlayer">ยกเลิก</button>
+          <button type="submit" class="btn btn--solid" id="savePlayer">บันทึก</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="sheet sheet--narrow" id="loginSheet">
+      <form method="dialog" class="sheet__form" id="loginForm">
+        <h3>ปลดล็อกเพื่อคุมกระดาน</h3>
+        <p class="hint">ดูกระดานได้โดยไม่ต้องใส่รหัส ใส่รหัสเมื่อจะกดแต้มหรือแก้ตั้งค่า</p>
+        <label class="field field--stack">
+          <span>รหัสผ่าน</span>
+          <input type="password" id="loginPassword" required autocomplete="current-password" />
+        </label>
+        <p class="hint hint--error" id="loginError" hidden></p>
+        <div class="sheet__actions">
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="cancelLogin">ยกเลิก</button>
+          <button type="submit" class="btn btn--solid">ปลดล็อก</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

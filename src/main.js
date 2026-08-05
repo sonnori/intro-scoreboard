@@ -836,8 +836,8 @@ function applyAccess() {
   const onServer = net.api.mode === 'server';
   const label = $('modeLabel');
   if (!onServer) {
-    label.hidden = false;
-    label.textContent = 'ออฟไลน์';
+    label.hidden = !net.api.authed; // the login sheet already says where we are
+    label.textContent = 'เก็บข้อมูลในเครื่องนี้';
   } else if (net.api.degraded) {
     // Deployed without a data store: each instance keeps its own copy, so two
     // devices would quietly disagree. Say it out loud.
@@ -846,9 +846,9 @@ function applyAccess() {
   } else {
     label.hidden = true;
   }
-  $('lockBtn').hidden = !onServer;
+  $('lockBtn').hidden = false;
   $('lockBtn').textContent = net.api.authed ? 'ล็อก' : 'ปลดล็อก';
-  document.body.classList.toggle('locked', onServer && !net.api.authed);
+  document.body.classList.toggle('locked', !net.api.authed);
 }
 
 /* ── boot ──────────────────────────────────────────────── */
@@ -885,4 +885,7 @@ function applyAccess() {
   renderPresets();
   render();
   booting = false;
+
+  // Ask on arrival rather than waiting for the first tap to be refused.
+  if (!net.api.authed) openLogin();
 })();

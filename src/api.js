@@ -10,7 +10,17 @@
 const KEY = {
   match: 'intro-scoreboard/v3',
   presets: 'intro-scoreboard/presets',
+  unlocked: 'intro-scoreboard/unlocked',
 };
+
+/**
+ * The gate used when there's no server to ask — a static deploy or the
+ * standalone file. It keeps a passer-by from nudging the score, and that is
+ * all it can do: the value sits in code the browser downloads, so anyone who
+ * opens developer tools can read it. Set SCOREBOARD_PASSWORD on the host and
+ * the server-checked path takes over instead.
+ */
+const LOCAL_PASSWORD = '123455';
 
 const CLIENT_ID = Math.random().toString(36).slice(2, 10);
 
@@ -76,7 +86,7 @@ export async function bootstrap(defaults) {
     return { match: data.match, presets: data.presets || [] };
   } catch {
     api.mode = 'local';
-    api.authed = true;
+    api.authed = local.get(KEY.unlocked, false) === true;
     return {
       match: local.get(KEY.match, null) || defaults(),
       presets: local.get(KEY.presets, []),
@@ -186,14 +196,23 @@ function startPolling(handlers, everyMs = 1200) {
 /* ── control access ────────────────────────────────────── */
 
 export async function login(password) {
-  if (api.mode === 'local') return true;
+  if (api.mode === 'local') {
+    if (password !== LOCAL_PASSWORD) throw new Error('รหัสไม่ถูกต้อง');
+    local.set(KEY.unlocked, true);
+    api.authed = true;
+    return true;
+  }
   await call('/api/login', { method: 'POST', body: { password } });
   api.authed = true;
   return true;
 }
 
 export async function logout() {
-  if (api.mode === 'local') return;
+  if (api.mode === 'local') {
+    local.set(KEY.unlocked, false);
+    api.authed = false;
+    return;
+  }
   await call('/api/logout', { method: 'POST' });
   api.authed = false;
 }

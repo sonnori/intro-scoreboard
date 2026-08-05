@@ -1,0 +1,10 @@
+# Deploy the board as plain static files — no serverless functions.
+#
+# Vercel gives a function no memory that survives between requests, so with
+# api/ deployed but no Redis attached the score lives in one instance's memory
+# and quietly reverts when the next request lands somewhere else. Each browser
+# keeping its own copy is both simpler and more reliable.
+#
+# To turn the API back on (all screens sharing one score): delete this file,
+# attach Upstash Redis under Storage, and set SCOREBOARD_PASSWORD.
+api/

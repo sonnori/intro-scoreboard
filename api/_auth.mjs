@@ -9,7 +9,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const COOKIE = 'sb_control';
 
-const password = () => (process.env.SCOREBOARD_PASSWORD || '').trim();
+// Falls back to the same code the static build uses, so turning the API on
+// without setting the env var leaves the board locked rather than wide open.
+const password = () => (process.env.SCOREBOARD_PASSWORD || '123455').trim();
 
 const tokenFor = (pw) => createHmac('sha256', `scoreboard:${pw}`).update('control').digest('hex');
 

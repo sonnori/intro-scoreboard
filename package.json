@@ -12,7 +12,8 @@
     "app": "SINGLE_FILE=1 vite build && node scripts/bundle.mjs && node scripts/make-app.mjs && vite build",
     "serve": "node server/index.mjs",
     "start": "vite build && node server/index.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "photos": "node scripts/fit-photos.mjs"
   },
   "dependencies": {
     "@fontsource-variable/anuphan": "^5.3.0",

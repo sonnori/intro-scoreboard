@@ -8,3 +8,6 @@ Scoreboard.iconset
 # Build outputs — regenerate with `npm run app`
 Scoreboard.html
 Scoreboard.app/
+
+# ต้นฉบับก่อนย่อ เก็บไว้กันพลาด ไม่ต้องขึ้น repo
+photos/_original/

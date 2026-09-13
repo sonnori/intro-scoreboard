@@ -54,6 +54,13 @@ for (const file of files) {
   const side = Math.min(w, h);
   if (side < FLOOR) soft.push(`${file} (${w}×${h})`);
 
+  // Already a square JPEG at or under target: re-encoding would only lose
+  // quality, and this runs again every time a new face is added.
+  if (extname(file).toLowerCase() === '.jpg' && w === h && side <= TARGET) {
+    console.log(`  ${file}  ${w}×${h}  (ผ่านแล้ว ข้าม)`);
+    continue;
+  }
+
   const name = basename(file, extname(file));
   const out = join(dir, `${name}.jpg`);
   const stash = join(keep, file);

@@ -22,7 +22,7 @@
 
         <div class="rules" id="rulesPlate">
           <b id="targetLabel">15</b>
-          <span>แต้มชนะ</span>
+          <span id="targetWord">แต้มชนะ</span>
           <em id="deuceLabel">ดิวส์ เปิด</em>
         </div>
 
@@ -49,9 +49,13 @@
         </article>
       </section>
 
-      <section class="rosters">
+      <section class="rosters" id="teamRosters">
         <div class="roster" id="rosterA" data-team="a"></div>
         <div class="roster roster--b" id="rosterB" data-team="b"></div>
+      </section>
+
+      <section class="solo" id="soloWrap" hidden>
+        <div class="roster roster--solo" id="rosterSolo" data-team="solo"></div>
       </section>
     </main>
 
@@ -89,6 +93,19 @@
         </div>
 
         <div class="group">
+          <span class="eyebrow">รูปแบบ <em>FORMAT</em></span>
+          <div class="segmented" id="modePick" role="group" aria-label="รูปแบบการแข่ง">
+            <button type="button" data-mode="team">แข่งเป็นทีม</button>
+            <button type="button" data-mode="solo">แข่งเดี่ยว</button>
+          </div>
+          <div class="segmented" id="trackPick" role="group" aria-label="การตัดสิน">
+            <button type="button" data-track="0">มีแต้มชนะ</button>
+            <button type="button" data-track="1">นับคะแนนอย่างเดียว</button>
+          </div>
+          <p class="hint" id="formatHint"></p>
+        </div>
+
+        <div class="group" id="rulesGroup">
           <span class="eyebrow">กติกา <em>RULES</em></span>
           <label class="field">
             <span>คะแนนที่ชนะ</span>
@@ -145,6 +162,7 @@
           <ul class="keys">
             <li><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><span>ให้แต้มทีมซ้าย คนที่ 1–5</span></li>
             <li><kbd>U</kbd><kbd>I</kbd><kbd>O</kbd><kbd>P</kbd><kbd>[</kbd><span>ให้แต้มทีมขวา คนที่ 1–5</span></li>
+            <li><kbd>Q</kbd>…<kbd>O</kbd><span>โหมดเดี่ยว ให้แต้มคนที่ 1–8 เรียงจากซ้าย</span></li>
             <li><kbd>⌘</kbd><kbd>Z</kbd><span>เลิกทำแต้มล่าสุด</span></li>
             <li><kbd>H</kbd><span>สลับโหมดออกอากาศ (ซ่อนปุ่มควบคุม)</span></li>
           </ul>

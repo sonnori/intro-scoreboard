@@ -1580,3 +1580,110 @@ body.won .winner__inner {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── format: solo and track ────────────────────────────── */
+
+/* Solo has no team totals to show, so the whole stage belongs to the roster. */
+.solo {
+  display: flex;
+  justify-content: center;
+}
+
+.roster--solo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-end;
+  gap: 12px;
+}
+
+/* No team totals and no team colour pickers when everyone plays for themselves. */
+body.solo .scores,
+body.solo .group[data-team] {
+  display: none;
+}
+
+/* One competitor per card, each in their own colour. */
+.roster--solo .player,
+.roster--solo .addPlayer {
+  width: clamp(150px, 12.5vw, 240px);
+}
+
+.roster--solo .player__ava {
+  width: clamp(110px, 10.5vw, 204px);
+  height: clamp(110px, 10.5vw, 204px);
+}
+
+.roster--solo .player__pts {
+  font-size: clamp(40px, 3.8vw, 66px);
+}
+
+.player__rank {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+}
+
+.player--lead {
+  border-color: color-mix(in srgb, var(--tc) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tc) 50%, transparent),
+    0 18px 50px -22px var(--tc);
+}
+
+.player--lead .player__rank {
+  color: color-mix(in srgb, var(--tc) 55%, #fff);
+}
+
+.player--mp .player__pts {
+  animation: heartbeat 1.15s ease-in-out infinite;
+}
+
+.player--won {
+  border-color: var(--tc);
+}
+
+/* ── segmented choice ──────────────────────────────────── */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-chip);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.segmented button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+
+.segmented button:hover {
+  color: var(--chalk);
+}
+
+.segmented button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b0d18;
+  font-weight: 500;
+}
+
+/* Track mode decides nothing, so the winner chrome has nothing to announce. */
+body.track .team__state {
+  display: none;
+}

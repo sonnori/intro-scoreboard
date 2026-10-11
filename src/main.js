@@ -1,7 +1,18 @@
 import './style.css';
 import { createArena } from './arena.js';
 import { sfx } from './sound.js';
-import { SWATCHES, KEYS, CODES, defaults, hydrate, reset, evaluate, makePlayer } from './store.js';
+import {
+  SWATCHES,
+  KEYS,
+  CODES,
+  defaults,
+  hydrate,
+  reset,
+  evaluate,
+  makePlayer,
+  rosterOf,
+  soloColor,
+} from './store.js';
 import * as net from './api.js';
 import { PHOTOS } from './photos.js';
 
@@ -26,8 +37,23 @@ function requireControl() {
 
 /* ── scoring ───────────────────────────────────────────── */
 
-function playerById(team, id) {
-  return state.teams[team].players.find((p) => p.id === id);
+/** Roster keys are 'a' | 'b' for teams, 'solo' for an everyone-for-themselves match. */
+const rosterKeys = () => (state.mode === 'solo' ? ['solo'] : ['a', 'b']);
+const rosterHost = (key) => $(key === 'solo' ? 'rosterSolo' : key === 'a' ? 'rosterA' : 'rosterB');
+
+function playerById(key, id) {
+  return rosterOf(state, key).find((p) => p.id === id);
+}
+
+/** Which half of the arena reacts for this scorer. */
+function sideOf(key, id) {
+  if (key !== 'solo') return key;
+  return rosterOf(state, 'solo').findIndex((p) => p.id === id) % 2 === 0 ? 'a' : 'b';
+}
+
+function colorOf(key, id) {
+  if (key !== 'solo') return state.teams[key].color;
+  return soloColor(rosterOf(state, 'solo').findIndex((p) => p.id === id));
 }
 
 function award(team, id, delta, originEl) {
@@ -43,9 +69,10 @@ function award(team, id, delta, originEl) {
   if (history.length > 200) history.shift();
 
   if (delta > 0) {
-    arena.pulse(team);
-    if (state.sound) sfx.score(team);
-    if (originEl) floatBump(originEl, team);
+    const side = sideOf(team, id);
+    arena.pulse(side);
+    if (state.sound) sfx.score(side);
+    if (originEl) floatBump(originEl, colorOf(team, id));
   }
   render();
 }
@@ -61,32 +88,34 @@ function undo() {
   render();
 }
 
-function floatBump(el, team) {
+function floatBump(el, color) {
   const box = el.getBoundingClientRect();
   const node = document.createElement('div');
   node.className = 'bump';
   node.textContent = '+1';
   node.style.left = `${box.left + box.width / 2}px`;
   node.style.top = `${box.top}px`;
-  node.style.setProperty('--tc', state.teams[team].color);
+  node.style.setProperty('--tc', color);
   document.body.appendChild(node);
   setTimeout(() => node.remove(), 800);
 }
 
 /* ── render ────────────────────────────────────────────── */
 
-const rosterSig = { a: null, b: null };
+const rosterSig = { a: null, b: null, solo: null };
 
-function rosterSignature(team) {
-  return state.teams[team].players.map((p) => `${p.id}|${p.name}|${p.photo.length}`).join('~');
+function rosterSignature(key) {
+  return rosterOf(state, key)
+    .map((p) => `${p.id}|${p.name}|${p.photo.length}`)
+    .join('~');
 }
 
 function buildRoster(team) {
-  const host = team === 'a' ? $('rosterA') : $('rosterB');
+  const host = rosterHost(team);
   host.textContent = '';
   const frag = document.createDocumentFragment();
 
-  state.teams[team].players.forEach((p, i) => {
+  rosterOf(state, team).forEach((p, i) => {
     const card = document.createElement('button');
     card.className = 'player';
     card.dataset.id = p.id;
@@ -131,6 +160,15 @@ function buildRoster(team) {
 
     card.append(ava, name, pts, edit, minus);
 
+    if (team === 'solo') {
+      // Each competitor carries their own colour; there is no team to inherit from.
+      card.style.setProperty('--tc', soloColor(i));
+      const rank = document.createElement('span');
+      rank.className = 'player__rank';
+      rank.dataset.rank = p.id;
+      card.appendChild(rank);
+    }
+
     if (KEYS[team][i]) {
       const key = document.createElement('span');
       key.className = 'player__key';
@@ -151,34 +189,67 @@ function buildRoster(team) {
 
 function render() {
   const s = evaluate(state);
+  const solo = s.mode === 'solo';
 
-  for (const team of ['a', 'b']) {
-    const sig = rosterSignature(team);
-    if (sig !== rosterSig[team]) {
-      rosterSig[team] = sig;
-      buildRoster(team);
+  document.body.classList.toggle('solo', solo);
+  document.body.classList.toggle('track', Boolean(s.track));
+  $('soloWrap').hidden = !solo;
+  $('teamRosters').hidden = solo;
+
+  for (const key of rosterKeys()) {
+    const sig = rosterSignature(key);
+    if (sig !== rosterSig[key]) {
+      rosterSig[key] = sig;
+      buildRoster(key);
     }
-    state.teams[team].players.forEach((p) => {
+    rosterOf(state, key).forEach((p) => {
       const el = document.querySelector(`[data-pts="${p.id}"]`);
       if (el && el.textContent !== String(p.points)) el.textContent = p.points;
     });
   }
 
-  const upper = team => (team === 'a' ? 'A' : 'B');
+  if (solo) renderSolo(s);
+  else renderTeams(s);
+
+  $('matchLabel').textContent = `แมตช์ ${state.matchNo}`;
+  renderRulesPlate(s);
+  $('undoBtn').disabled = history.length === 0;
+  renderWinner(s);
+
+  // Writing back a change that came from another screen would ping-pong forever.
+  if (!booting && !applyingRemote && net.api.authed) net.saveMatch(state);
+}
+
+function bumpScore(el, value) {
+  if (el.textContent === String(value)) return;
+  el.textContent = value;
+  el.classList.add('pop');
+  setTimeout(() => el.classList.remove('pop'), 200);
+}
+
+const highScore = (s) => (s.mode === 'solo' ? s.top : Math.max(s.a, s.b));
+
+/**
+ * How far apart two scores must be before the seam is pinned to one edge.
+ * With no target to measure against, it scales to the match so far.
+ */
+function seamSpan(s) {
+  return s.track ? Math.max(5, highScore(s) * 0.6) : Math.max(3, state.rules.target * 0.6);
+}
+
+const clampUnit = (v) => Math.max(-1, Math.min(1, v));
+
+function renderTeams(s) {
   for (const team of ['a', 'b']) {
     const t = state.teams[team];
+    const up = team === 'a' ? 'A' : 'B';
     document.documentElement.style.setProperty(`--${team}`, t.color);
-    $(`name${upper(team)}`).textContent = t.name;
-    const scoreEl = $(`score${upper(team)}`);
-    const val = String(team === 'a' ? s.a : s.b);
-    if (scoreEl.textContent !== val) {
-      scoreEl.textContent = val;
-      scoreEl.classList.add('pop');
-      setTimeout(() => scoreEl.classList.remove('pop'), 200);
-    }
-    const stateEl = $(`state${upper(team)}`);
+    $(`name${up}`).textContent = t.name;
+    bumpScore($(`score${up}`), team === 'a' ? s.a : s.b);
+
     const mp = team === 'a' ? s.matchPointA : s.matchPointB;
     const label = s.winner === team ? 'ชนะ' : mp ? 'แมตช์พอยต์' : '';
+    const stateEl = $(`state${up}`);
     if (stateEl.dataset.label !== label) {
       stateEl.dataset.label = label;
       stateEl.innerHTML = label ? `<i></i><b>${label}</b><i></i>` : '';
@@ -191,50 +262,87 @@ function render() {
   arena.setAlert(
     s.matchPointA && s.matchPointB ? 'both' : s.matchPointA ? 'a' : s.matchPointB ? 'b' : null
   );
-
-  $('matchLabel').textContent = `แมตช์ ${state.matchNo}`;
-  $('targetLabel').textContent = state.rules.target;
-  const deuceEl = $('deuceLabel');
-  deuceEl.textContent = state.rules.deuce
-    ? s.deuceActive
-      ? 'ดิวส์'
-      : 'ดิวส์ เปิด'
-    : 'ดิวส์ ปิด';
-  deuceEl.classList.toggle('live', s.deuceActive);
-
-  $('undoBtn').disabled = history.length === 0;
-
-  // the seam is the lead: A in front pushes it into B's half
-  const span = Math.max(3, state.rules.target * 0.6);
   arena.setColors(state.teams.a.color, state.teams.b.color);
-  arena.setSeam(Math.max(-1, Math.min(1, (s.a - s.b) / span)));
+  arena.setSeam(clampUnit((s.a - s.b) / seamSpan(s)));
   const top = Math.max(s.a, s.b, 1);
   arena.setEnergy(s.a / top, s.b / top);
+}
 
-  // winner takeover
-  const showWin = s.key && s.key !== dismissedWinKey;
-  document.body.classList.toggle('won', Boolean(showWin));
-  if (showWin) {
-    const t = state.teams[s.winner];
-    $('winnerName').textContent = t.name;
-    $('winnerScore').textContent = `${s.a} – ${s.b}`;
-    $('winner').style.setProperty('--wc', t.color);
-    if (s.key !== lastWinKey) {
-      lastWinKey = s.key;
-      arena.burst(t.color);
-      if (state.sound) sfx.win();
-    }
-  } else if (!s.key) {
-    lastWinKey = null;
+function renderSolo(s) {
+  const order = new Map(s.ranked.map((p, i) => [p.id, i]));
+  const showRank = s.top > 0;
+
+  for (const p of state.solo.players) {
+    const card = document.querySelector(`#rosterSolo .player[data-id="${p.id}"]`);
+    if (!card) continue;
+    const rankEl = card.querySelector('.player__rank');
+    if (rankEl) rankEl.textContent = showRank ? `#${(order.get(p.id) ?? 0) + 1}` : '';
+    card.classList.toggle('player--lead', p.id === s.leaderId);
+    card.classList.toggle('player--mp', s.matchPoints.has(p.id));
+    card.classList.toggle('player--won', s.winner === p.id);
   }
 
-  // Writing back a change that came from another screen would ping-pong forever.
-  if (!booting && !applyingRemote && net.api.authed) net.saveMatch(state);
+  // The arena still tells one story: the leader pushing the runner-up back.
+  const lead = s.ranked[0];
+  const second = s.ranked[1];
+  arena.setColors(
+    lead ? colorOf('solo', lead.id) : '#3B6BFF',
+    second ? colorOf('solo', second.id) : '#FF4438'
+  );
+  arena.setSeam(clampUnit(((lead?.points ?? 0) - (second?.points ?? 0)) / seamSpan(s)));
+  const top = Math.max(s.top, 1);
+  arena.setEnergy(1, (second?.points ?? 0) / top || 0.45);
+
+  const flagged = [...s.matchPoints];
+  arena.setAlert(
+    flagged.length > 1 ? 'both' : flagged.length === 1 ? (flagged[0] === lead?.id ? 'a' : 'b') : null
+  );
+}
+
+function renderRulesPlate(s) {
+  const target = $('targetLabel');
+  const word = $('targetWord');
+  const deuceEl = $('deuceLabel');
+
+  if (s.track) {
+    target.hidden = true;
+    deuceEl.hidden = true;
+    word.textContent = 'นับคะแนนอย่างเดียว';
+    return;
+  }
+  target.hidden = false;
+  deuceEl.hidden = false;
+  target.textContent = state.rules.target;
+  word.textContent = 'แต้มชนะ';
+  deuceEl.textContent = state.rules.deuce ? (s.deuceActive ? 'ดิวส์' : 'ดิวส์ เปิด') : 'ดิวส์ ปิด';
+  deuceEl.classList.toggle('live', s.deuceActive);
+}
+
+function renderWinner(s) {
+  const showWin = s.key && s.key !== dismissedWinKey;
+  document.body.classList.toggle('won', Boolean(showWin));
+  if (!showWin) {
+    if (!s.key) lastWinKey = null;
+    return;
+  }
+  const color =
+    s.mode === 'solo' ? colorOf('solo', s.winner) : state.teams[s.winner].color;
+  $('winnerName').textContent = s.winnerName;
+  $('winnerScore').textContent =
+    s.mode === 'solo'
+      ? `${s.top} – ${s.ranked[1]?.points ?? 0}`
+      : `${s.a} – ${s.b}`;
+  $('winner').style.setProperty('--wc', color);
+  if (s.key !== lastWinKey) {
+    lastWinKey = s.key;
+    arena.burst(color);
+    if (state.sound) sfx.win();
+  }
 }
 
 /* ── roster interaction ────────────────────────────────── */
 
-document.querySelector('.rosters').addEventListener('click', (e) => {
+document.querySelector('.board').addEventListener('click', (e) => {
   const editId = e.target.closest('[data-edit]')?.dataset.edit;
   const minusId = e.target.closest('[data-minus]')?.dataset.minus;
   const addTeam = e.target.closest('[data-add]')?.dataset.add;
@@ -436,7 +544,7 @@ $('playerForm').addEventListener('submit', (e) => {
   } else {
     const p = makePlayer(name);
     p.photo = photo;
-    state.teams[editing.team].players.push(p);
+    rosterOf(state, editing.team).push(p);
   }
   sheet.close();
   render();
@@ -445,11 +553,17 @@ $('playerForm').addEventListener('submit', (e) => {
 $('cancelPlayer').addEventListener('click', () => sheet.close());
 
 $('deletePlayer').addEventListener('click', () => {
-  const team = state.teams[editing.team];
-  const p = team.players.find((x) => x.id === editing.id);
+  const p = playerById(editing.team, editing.id);
   if (!p) return;
-  if (!confirm(`ลบ ${p.name} ออกจาก${team.name}?`)) return;
-  team.players = team.players.filter((x) => x.id !== editing.id);
+  const where = editing.team === 'solo' ? 'การแข่ง' : state.teams[editing.team].name;
+  if (!confirm(`ลบ ${p.name} ออกจาก${where}?`)) return;
+  if (editing.team === 'solo') {
+    state.solo.players = state.solo.players.filter((x) => x.id !== editing.id);
+  } else {
+    state.teams[editing.team].players = state.teams[editing.team].players.filter(
+      (x) => x.id !== editing.id
+    );
+  }
   sheet.close();
   render();
 });
@@ -525,6 +639,27 @@ $('inputCap').addEventListener('input', () => {
   render();
 });
 
+document.querySelectorAll('#modePick button').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    if (state.mode === btn.dataset.mode) return;
+    state.mode = btn.dataset.mode;
+    history.length = 0;
+    dismissedWinKey = lastWinKey = null;
+    rosterSig.a = rosterSig.b = rosterSig.solo = null;
+    syncDrawer();
+    render();
+  })
+);
+
+document.querySelectorAll('#trackPick button').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    state.rules.track = btn.dataset.track === '1';
+    dismissedWinKey = lastWinKey = null;
+    syncDrawer();
+    render();
+  })
+);
+
 $('inputDeuce').addEventListener('change', () => {
   state.rules.deuce = $('inputDeuce').checked;
   dismissedWinKey = null;
@@ -542,13 +677,31 @@ $('resetAll').addEventListener('click', () => {
   state = reset();
   history.length = 0;
   dismissedWinKey = lastWinKey = null;
-  rosterSig.a = rosterSig.b = null;
+  rosterSig.a = rosterSig.b = rosterSig.solo = null;
   syncDrawer();
   render();
   openDrawer(false);
 });
 
 function syncDrawer() {
+  const solo = state.mode === 'solo';
+  const track = Boolean(state.rules.track);
+
+  document
+    .querySelectorAll('#modePick button')
+    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+  document
+    .querySelectorAll('#trackPick button')
+    .forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.track === '1') === track)));
+
+  // Nothing in the rules group means anything without a finish line.
+  $('rulesGroup').hidden = track;
+  $('formatHint').textContent = track
+    ? 'นับคะแนนไปเรื่อย ๆ ไม่มีผู้ชนะ ไม่มีแมตช์พอยต์ เหมาะกับช่วงสะสมแต้ม'
+    : solo
+      ? 'ทุกคนแข่งกันเอง คนแรกที่ถึงแต้มชนะเป็นผู้ชนะ'
+      : 'สองทีม คะแนนทีมคือผลรวมของทุกคนในทีม';
+
   $('inputNameA').value = state.teams.a.name;
   $('inputNameB').value = state.teams.b.name;
   $('inputTarget').value = state.rules.target;
@@ -572,7 +725,7 @@ function syncDrawer() {
 
 function newMatch() {
   if (!requireControl()) return;
-  for (const team of ['a', 'b']) state.teams[team].players.forEach((p) => (p.points = 0));
+  for (const key of ['a', 'b', 'solo']) rosterOf(state, key).forEach((p) => (p.points = 0));
   state.matchNo += 1;
   history.length = 0;
   dismissedWinKey = lastWinKey = null;
@@ -593,7 +746,7 @@ $('undoBtn').addEventListener('click', undo);
 $('soundBtn').addEventListener('click', () => {
   state.sound = !state.sound;
   $('soundBtn').setAttribute('aria-pressed', String(state.sound));
-  save(state);
+  if (net.api.authed) net.saveMatch(state);
 });
 
 $('cleanBtn').addEventListener('click', toggleClean);
@@ -637,10 +790,10 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') return openDrawer(false);
 
-  for (const team of ['a', 'b']) {
+  for (const team of rosterKeys()) {
     const i = slotFor(e, team);
     if (i === -1) continue;
-    const p = state.teams[team].players[i];
+    const p = rosterOf(state, team)[i];
     if (!p) return;
     e.preventDefault();
     const card = document.querySelector(`.player[data-id="${p.id}"]`);
@@ -745,6 +898,8 @@ function snapshotTeam(team) {
   };
 }
 
+const snapshotSolo = () => state.solo.players.map((p) => ({ name: p.name, photo: p.photo }));
+
 $('savePresetBtn').addEventListener('click', async () => {
   if (!requireControl()) return;
   const field = $('presetName');
@@ -757,8 +912,10 @@ $('savePresetBtn').addEventListener('click', async () => {
     presets = await net.savePreset(
       {
         name,
+        mode: state.mode,
         rules: { ...state.rules },
         teams: { a: snapshotTeam(state.teams.a), b: snapshotTeam(state.teams.b) },
+        solo: snapshotSolo(),
       },
       presets
     );
@@ -784,15 +941,24 @@ function loadPreset(preset) {
       }),
     };
   };
+  const revive = (list) =>
+    (list || []).map((p) => {
+      const made = makePlayer(p.name);
+      made.photo = p.photo || '';
+      return made;
+    });
+
   state = hydrate({
     matchNo: state.matchNo + 1,
     sound: state.sound,
+    mode: preset.mode || 'team',
     rules: { ...defaults().rules, ...preset.rules },
     teams: { a: build('a'), b: build('b') },
+    solo: { players: revive(preset.solo) },
   });
   history.length = 0;
   dismissedWinKey = lastWinKey = null;
-  rosterSig.a = rosterSig.b = null;
+  rosterSig.a = rosterSig.b = rosterSig.solo = null;
   syncDrawer();
   render();
   openDrawer(false);
@@ -867,7 +1033,7 @@ function applyAccess() {
   net.subscribe({
     match: (msg) => {
       state = hydrate(msg.match);
-      rosterSig.a = rosterSig.b = null;
+      rosterSig.a = rosterSig.b = rosterSig.solo = null;
       applyingRemote = true;
       syncDrawer();
       render();

@@ -21,6 +21,7 @@ const $ = (id) => document.getElementById(id);
 let state = defaults();
 let presets = [];
 let cast = [];
+let hiddenPhotos = [];
 let lastShape = null;
 let booting = true;
 let applyingRemote = false;
@@ -413,16 +414,43 @@ function openPlayerSheet(team, id) {
   if (!requireControl()) return;
   const existing = id ? playerById(team, id) : null;
   editing = { team, id };
-  $('sheetTitle').textContent = existing ? 'แก้ไขผู้เล่น' : 'เพิ่มผู้เล่น';
-  $('playerName').value = existing?.name || '';
+  if (existing) {
+    sheet.showModal();
+    showEditPane(existing);
+  } else {
+    showPickPane();
+    sheet.showModal();
+  }
+}
+
+/** Choosing from the database — the usual way someone joins a match. */
+function showPickPane() {
+  $('sheetTitle').textContent = 'เลือกผู้เล่น';
+  $('pickPane').hidden = false;
+  $('editPane').hidden = true;
+  $('deletePlayer').hidden = true;
+  $('newPerson').hidden = false;
+  $('savePlayer').hidden = true;
+  $('cancelPlayer').textContent = 'ปิด';
+  renderLibrary();
+}
+
+/** Creating someone new, or correcting a player already in the match. */
+function showEditPane(existing) {
+  $('sheetTitle').textContent = existing ? 'แก้ไขผู้เล่น' : 'เพิ่มคนใหม่';
+  $('pickPane').hidden = true;
+  $('editPane').hidden = false;
   $('deletePlayer').hidden = !existing;
-  renderCast();
-  renderPhotoPicker();
-  sheet.showModal();
+  $('newPerson').hidden = true;
+  $('savePlayer').hidden = false;
+  $('cancelPlayer').textContent = 'ยกเลิก';
+  $('playerName').value = existing?.name || '';
   if (existing?.photo) loadCropSource(existing.photo);
   else clearCrop();
   setTimeout(() => $('playerName').focus(), 40);
 }
+
+$('newPerson').addEventListener('click', () => showEditPane(null));
 
 /* ── crop ──────────────────────────────────────────────────
    The operator frames the shot here: drag to pan, scroll or
@@ -447,9 +475,7 @@ function clearCrop() {
   cropImg.removeAttribute('src');
   $('cropEmpty').hidden = false;
   $('removePhoto').hidden = true;
-  $('cropEmptyLabel').textContent = PHOTOS.length
-    ? 'เลือกจากรูปด้านบน หรือกดที่นี่เพื่อเลือกไฟล์'
-    : 'เลือกไฟล์จากเครื่อง';
+  $('cropEmptyLabel').textContent = 'เลือกไฟล์จากเครื่อง';
   $('cropHint').hidden = true;
   cropZoom.disabled = true;
   cropZoom.value = '1';
@@ -594,14 +620,15 @@ $('playerForm').addEventListener('submit', (e) => {
   sheet.close();
   render();
 
-  // Anyone typed in once is kept, so the next taping starts from a full cast.
+  // Anyone typed in once joins the database, so the next taping starts full.
   net
-    .addToCast({ name, photo }, cast)
+    .library('add', { name, photo }, { cast, hidden: hiddenPhotos })
     .then((next) => {
-      cast = next;
+      cast = next.cast;
+      hiddenPhotos = next.hidden;
     })
     .catch(() => {
-      /* the match is already saved; a missing cast entry can be re-added */
+      /* the match is already saved; the entry can be added again later */
     });
 });
 
@@ -857,24 +884,52 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-/* ── prepared photos ───────────────────────────────────── */
+/* ── the player database ───────────────────────────────── */
 
 /**
- * People prepared before the shoot. Tap one and they walk straight into the
- * match; the × takes them out of the cast once their taping is done.
+ * One list, two sources: photos baked in from `photos/` at build time, and
+ * people added here. An operator should never have to know which is which —
+ * both are tappable and both are removable. Removing a baked-in photo hides
+ * it, because a web page cannot delete a file that shipped with the build.
  */
-function renderCast() {
+function libraryEntries() {
+  const gone = new Set(hiddenPhotos);
+  const added = cast.map((c) => ({ id: c.id, name: c.name, photo: c.photo, kind: 'cast' }));
+  const names = new Set(added.map((a) => a.name));
+  const folder = PHOTOS.filter((p) => !gone.has(p.name) && !names.has(p.name)).map((p) => ({
+    name: p.name,
+    photo: p.url,
+    kind: 'folder',
+  }));
+  return [...added, ...folder].sort((a, b) => a.name.localeCompare(b.name, 'th'));
+}
+
+async function mutateLibrary(action, payload) {
+  try {
+    const next = await net.library(action, payload, { cast, hidden: hiddenPhotos });
+    cast = next.cast;
+    hiddenPhotos = next.hidden;
+    renderLibrary();
+  } catch (e) {
+    alert(`แก้รายชื่อไม่สำเร็จ: ${e.message}`);
+  }
+}
+
+function renderLibrary() {
   const host = $('castList');
   host.textContent = '';
+  const people = libraryEntries();
 
-  // The section stays while empty — hiding it is how the last version managed
-  // to ship a feature nobody could find.
-  $('castPick').hidden = Boolean(editing.id);
-  $('castEmpty').hidden = cast.length > 0;
-  $('castHint').hidden = cast.length === 0;
-  if ($('castPick').hidden || !cast.length) return;
+  // The list stays on screen while empty — hiding it is how a feature ships
+  // that nobody can find.
+  $('castEmpty').hidden = people.length > 0;
+  $('castHint').hidden = people.length === 0;
 
-  for (const person of cast) {
+  const restore = $('restoreHidden');
+  restore.hidden = hiddenPhotos.length === 0;
+  restore.textContent = `คืนรูปที่ลบไป (${hiddenPhotos.length})`;
+
+  for (const person of people) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'lib__item';
@@ -896,16 +951,12 @@ function renderCast() {
     const drop = document.createElement('span');
     drop.className = 'lib__drop';
     drop.textContent = '×';
-    drop.title = 'เอาออกจากคลัง';
-    drop.addEventListener('click', async (e) => {
+    drop.title = 'ลบออกจากรายชื่อ';
+    drop.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!confirm(`เอา ${person.name} ออกจากคลังผู้เล่น?`)) return;
-      try {
-        cast = await net.removeFromCast(person.id, cast);
-        renderCast();
-      } catch (err) {
-        alert(`เอาออกไม่สำเร็จ: ${err.message}`);
-      }
+      if (!confirm(`ลบ ${person.name} ออกจากรายชื่อผู้เล่น?`)) return;
+      if (person.kind === 'cast') mutateLibrary('remove', { id: person.id });
+      else mutateLibrary('hide', { name: person.name });
     });
 
     card.append(ava, label, drop);
@@ -920,43 +971,7 @@ function renderCast() {
   }
 }
 
-function renderPhotoPicker() {
-  const host = $('libList');
-  host.textContent = '';
-  // The section stays even when the folder is empty — otherwise nobody would
-  // ever learn the folder exists.
-  $('libEmpty').hidden = PHOTOS.length > 0;
-  if (!PHOTOS.length) return;
-
-  for (const photo of PHOTOS) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'lib__item';
-    card.title = `ใช้รูป ${photo.name}`;
-
-    const ava = document.createElement('span');
-    ava.className = 'lib__ava';
-    const img = document.createElement('img');
-    img.src = photo.url;
-    img.alt = '';
-    ava.appendChild(img);
-
-    const label = document.createElement('span');
-    label.className = 'lib__name';
-    label.textContent = photo.name;
-
-    card.append(ava, label);
-    card.addEventListener('click', () => {
-      loadCropSource(photo.url);
-      // The filename is the name, so an operator picking a prepared face types nothing.
-      const nameField = $('playerName');
-      if (!nameField.value.trim()) nameField.value = photo.name;
-      [...host.children].forEach((c) => c.classList.remove('lib__item--on'));
-      card.classList.add('lib__item--on');
-    });
-    host.appendChild(card);
-  }
-}
+$('restoreHidden').addEventListener('click', () => mutateLibrary('unhideAll', {}));
 
 /* ── presets ───────────────────────────────────────────── */
 
@@ -1140,6 +1155,7 @@ function applyAccess() {
   state = hydrate(data.match);
   presets = data.presets || [];
   cast = data.cast || [];
+  hiddenPhotos = data.hidden || [];
 
   net.onSaveError((msg) => {
     const label = $('modeLabel');
@@ -1171,9 +1187,10 @@ function applyAccess() {
       render();
       applyingRemote = false;
     },
-    cast: (msg) => {
+    library: (msg) => {
       cast = msg.cast;
-      if (sheet.open) renderCast();
+      hiddenPhotos = msg.hidden || [];
+      if (sheet.open && !$('pickPane').hidden) renderLibrary();
     },
   });
 

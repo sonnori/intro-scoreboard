@@ -1687,3 +1687,26 @@ body.solo .group[data-team] {
 body.track .team__state {
   display: none;
 }
+
+/* the pick list can run long — let it scroll instead of pushing the buttons away */
+.libpick .lib {
+  max-height: 46vh;
+}
+
+#restoreHidden {
+  justify-self: start;
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+/* Touch has no hover: without this the × that removes someone from the list
+   is invisible on the operator's iPad. */
+@media (hover: none) {
+  .lib__drop {
+    opacity: 1;
+    width: 26px;
+    height: 26px;
+    font-size: 16px;
+    background: rgba(8, 10, 20, 0.9);
+  }
+}

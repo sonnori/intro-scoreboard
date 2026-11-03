@@ -29,8 +29,10 @@ function blank() {
       },
     },
     presets: [],
-    // Cast prepared ahead of the shoot; outlives any single match.
+    // The player database: people added in the app, plus the folder photos
+    // that have been removed from the list. Outlives any single match.
     cast: [],
+    hidden: [],
   };
 }
 

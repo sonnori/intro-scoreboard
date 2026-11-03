@@ -184,63 +184,59 @@
 
     <dialog class="sheet" id="playerSheet">
       <form method="dialog" class="sheet__form" id="playerForm">
-        <h3 id="sheetTitle">เพิ่มผู้เล่น</h3>
+        <h3 id="sheetTitle">เลือกผู้เล่น</h3>
 
-        <div class="libpick" id="castPick">
-          <span class="eyebrow">คลังผู้เล่น <em>CAST</em></span>
+        <!-- pick: one database, everyone in it, each removable -->
+        <div class="libpick" id="pickPane">
           <div class="lib" id="castList"></div>
-          <p class="hint" id="castHint">กดเพื่อใส่ลงการแข่งทันที · กด × มุมบนเพื่อเอาออกจากคลัง</p>
+          <p class="hint" id="castHint">กดชื่อเพื่อใส่ลงการแข่ง · กด × เพื่อลบออกจากรายชื่อ</p>
           <p class="hint" id="castEmpty" hidden>
-            ยังว่างอยู่ — ใครที่คุณสร้างด้านล่างจะถูกเก็บเข้าคลังให้เอง
-            เทปหน้าเปิดหน้านี้มาก็กดชื่อเขาทีเดียวลงสนามได้เลย
+            ยังไม่มีใครในรายชื่อ — กด “เพิ่มคนใหม่” เพื่อสร้างคนแรก
           </p>
+          <button type="button" class="btn btn--ghost" id="restoreHidden" hidden></button>
         </div>
 
-        <div class="libpick" id="libPick">
-          <span class="eyebrow" id="photosEyebrow">สร้างคนใหม่จากรูปที่เตรียมไว้ <em>PHOTOS</em></span>
-          <div class="lib" id="libList"></div>
-          <p class="hint" id="libEmpty" hidden>
-            ยังไม่มีรูปในโฟลเดอร์ <code>photos/</code> — ลากรูปใส่แล้วสั่ง
-            <code>npm run build</code> ชื่อไฟล์จะกลายเป็นชื่อผู้เล่น
-          </p>
-        </div>
-
-        <div class="crop">
-          <div class="crop__box" id="cropBox">
-            <img id="cropImg" alt="" draggable="false" hidden />
-            <button type="button" class="crop__empty" id="cropEmpty">
-              <b>+</b>
-              <span id="cropEmptyLabel">เลือกไฟล์จากเครื่อง</span>
-            </button>
+        <!-- create / edit -->
+        <div id="editPane" hidden>
+          <div class="crop">
+            <div class="crop__box" id="cropBox">
+              <img id="cropImg" alt="" draggable="false" hidden />
+              <button type="button" class="crop__empty" id="cropEmpty">
+                <b>+</b>
+                <span id="cropEmptyLabel">เลือกไฟล์จากเครื่อง</span>
+              </button>
+            </div>
+            <input
+              type="range"
+              class="crop__zoom"
+              id="cropZoom"
+              min="1"
+              max="4"
+              step="0.01"
+              value="1"
+              aria-label="ซูมรูป"
+              disabled
+            />
+            <p class="hint" id="cropHint">ลากรูปเพื่อจัดตำแหน่ง เลื่อนแถบหรือหมุนสกรอลล์เพื่อซูม</p>
+            <div class="crop__actions">
+              <button type="button" class="btn btn--ghost" id="avatarPick">เลือกไฟล์จากเครื่อง</button>
+              <button type="button" class="btn btn--ghost" id="removePhoto">ลบรูป</button>
+            </div>
           </div>
-          <input
-            type="range"
-            class="crop__zoom"
-            id="cropZoom"
-            min="1"
-            max="4"
-            step="0.01"
-            value="1"
-            aria-label="ซูมรูป"
-            disabled
-          />
-          <p class="hint" id="cropHint">ลากรูปเพื่อจัดตำแหน่ง เลื่อนแถบหรือหมุนสกรอลล์เพื่อซูม</p>
-          <div class="crop__actions">
-            <button type="button" class="btn btn--ghost" id="avatarPick">เลือกไฟล์จากเครื่อง</button>
-            <button type="button" class="btn btn--ghost" id="removePhoto">ลบรูป</button>
-          </div>
-        </div>
 
-        <label class="field field--stack">
-          <span>ชื่อผู้เล่น</span>
-          <input type="text" id="playerName" maxlength="20" required />
-        </label>
+          <label class="field field--stack">
+            <span>ชื่อผู้เล่น</span>
+            <input type="text" id="playerName" maxlength="20" />
+          </label>
+        </div>
 
         <input type="file" id="photoInput" accept="image/*" hidden />
+
         <div class="sheet__actions">
-          <button type="button" class="btn btn--danger" id="deletePlayer">ลบผู้เล่น</button>
+          <button type="button" class="btn btn--danger" id="deletePlayer">เอาออกจากการแข่ง</button>
+          <button type="button" class="btn" id="newPerson">เพิ่มคนใหม่</button>
           <span class="spacer"></span>
-          <button type="button" class="btn" id="cancelPlayer">ยกเลิก</button>
+          <button type="button" class="btn" id="cancelPlayer">ปิด</button>
           <button type="submit" class="btn btn--solid" id="savePlayer">บันทึก</button>
         </div>
       </form>

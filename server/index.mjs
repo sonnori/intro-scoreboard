@@ -93,6 +93,7 @@ async function api(req, res, url) {
       match,
       presets,
       cast: cast || [],
+      hidden: db.read().hidden || [],
       version: version || 0,
       authed: auth.authed(req),
     });
@@ -166,29 +167,38 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true });
   }
 
-  if (path === '/api/cast' && (method === 'POST' || method === 'DELETE')) {
+  // One endpoint for the whole player database so a caller never has to
+  // reconcile two lists that changed in different requests.
+  if (path === '/api/library' && method === 'POST') {
     if (!gate()) return undefined;
     const data = db.read();
     data.cast = data.cast || [];
+    data.hidden = data.hidden || [];
+    const { action, name, photo, id } = await readJson(req);
 
-    if (method === 'POST') {
-      const { name, photo } = await readJson(req);
-      if (!name?.trim()) return send(res, 400, { error: 'ต้องมีชื่อ' });
-      const clean = name.trim();
+    if (action === 'add') {
+      const clean = (name || '').trim();
+      if (!clean) return send(res, 400, { error: 'ต้องมีชื่อ' });
       const existing = data.cast.find((p) => p.name === clean);
-      // Same person added twice is a correction, not a second entry.
+      // The same name again is a correction, not a second person.
       if (existing) existing.photo = photo || existing.photo;
       else data.cast.push({ id: db.newId('C'), name: clean, photo: photo || '', addedAt: Date.now() });
-    } else {
-      const id = url.searchParams.get('id');
-      const before = data.cast.length;
+      // Adding a name back un-hides the folder photo it shadows.
+      data.hidden = data.hidden.filter((h) => h !== clean);
+    } else if (action === 'remove') {
       data.cast = data.cast.filter((p) => p.id !== id);
-      if (data.cast.length === before) return send(res, 404, { error: 'ไม่พบในคลัง' });
+    } else if (action === 'hide') {
+      const clean = (name || '').trim();
+      if (clean && !data.hidden.includes(clean)) data.hidden.push(clean);
+    } else if (action === 'unhideAll') {
+      data.hidden = [];
+    } else {
+      return send(res, 400, { error: 'action ไม่ถูกต้อง' });
     }
 
     db.commit();
-    broadcast('cast', { cast: data.cast });
-    return send(res, 200, { cast: data.cast });
+    broadcast('library', { cast: data.cast, hidden: data.hidden });
+    return send(res, 200, { cast: data.cast, hidden: data.hidden });
   }
 
   if (path === '/api/presets' && method === 'POST') {

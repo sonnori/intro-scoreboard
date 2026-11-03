@@ -11,6 +11,7 @@ const KEY = {
   match: 'intro-scoreboard/v3',
   presets: 'intro-scoreboard/presets',
   cast: 'intro-scoreboard/cast',
+  hidden: 'intro-scoreboard/hidden',
   unlocked: 'intro-scoreboard/unlocked',
 };
 
@@ -84,7 +85,12 @@ export async function bootstrap(defaults) {
     api.mode = 'server';
     api.authed = Boolean(data.authed);
     api.degraded = Boolean(data.degraded);
-    return { match: data.match, presets: data.presets || [], cast: data.cast || [] };
+    return {
+      match: data.match,
+      presets: data.presets || [],
+      cast: data.cast || [],
+      hidden: data.hidden || [],
+    };
   } catch {
     api.mode = 'local';
     api.authed = local.get(KEY.unlocked, false) === true;
@@ -92,6 +98,7 @@ export async function bootstrap(defaults) {
       match: local.get(KEY.match, null) || defaults(),
       presets: local.get(KEY.presets, []),
       cast: local.get(KEY.cast, []),
+      hidden: local.get(KEY.hidden, []),
     };
   }
 }
@@ -237,31 +244,39 @@ export async function logout() {
   api.authed = false;
 }
 
-/* ── cast: people prepared before the shoot ────────────── */
+/* ── the player database ───────────────────────────────── */
 
-/** Resolves to the whole list either way, so callers assign and never append. */
-export async function addToCast(entry, cast) {
+/**
+ * People live in two places that the app presents as one list: photos baked
+ * into the build from `photos/`, and anyone added here. `hidden` is how a
+ * baked-in photo gets removed, since a web page cannot delete a built file.
+ *
+ * Every action resolves to the whole database, so callers assign rather than
+ * patch and can't end up disagreeing with the server.
+ */
+export async function library(action, payload, current) {
   if (api.mode === 'local') {
-    const at = cast.findIndex((p) => p.name === entry.name);
-    const next =
-      at === -1
-        ? [...cast, { id: `C${Date.now().toString(36)}`, addedAt: Date.now(), ...entry }]
-        : cast.map((p, i) => (i === at ? { ...p, photo: entry.photo || p.photo } : p));
-    local.set(KEY.cast, next);
-    return next;
+    let { cast, hidden } = current;
+    if (action === 'add') {
+      const name = payload.name.trim();
+      const at = cast.findIndex((p) => p.name === name);
+      cast =
+        at === -1
+          ? [...cast, { id: `C${Date.now().toString(36)}`, addedAt: Date.now(), name, photo: payload.photo || '' }]
+          : cast.map((p, i) => (i === at ? { ...p, photo: payload.photo || p.photo } : p));
+      hidden = hidden.filter((h) => h !== name);
+    } else if (action === 'remove') {
+      cast = cast.filter((p) => p.id !== payload.id);
+    } else if (action === 'hide') {
+      hidden = hidden.includes(payload.name) ? hidden : [...hidden, payload.name];
+    } else if (action === 'unhideAll') {
+      hidden = [];
+    }
+    local.set(KEY.cast, cast);
+    local.set(KEY.hidden, hidden);
+    return { cast, hidden };
   }
-  const { cast: next } = await call('/api/cast', { method: 'POST', body: entry });
-  return next;
-}
-
-export async function removeFromCast(id, cast) {
-  if (api.mode === 'local') {
-    const next = cast.filter((p) => p.id !== id);
-    local.set(KEY.cast, next);
-    return next;
-  }
-  const { cast: next } = await call(`/api/cast?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-  return next;
+  return call('/api/library', { method: 'POST', body: { action, ...payload } });
 }
 
 /* ── presets ───────────────────────────────────────────── */

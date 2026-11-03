@@ -866,8 +866,13 @@ window.addEventListener('keydown', (e) => {
 function renderCast() {
   const host = $('castList');
   host.textContent = '';
-  $('castPick').hidden = Boolean(editing.id) || cast.length === 0;
-  if ($('castPick').hidden) return;
+
+  // The section stays while empty — hiding it is how the last version managed
+  // to ship a feature nobody could find.
+  $('castPick').hidden = Boolean(editing.id);
+  $('castEmpty').hidden = cast.length > 0;
+  $('castHint').hidden = cast.length === 0;
+  if ($('castPick').hidden || !cast.length) return;
 
   for (const person of cast) {
     const card = document.createElement('button');

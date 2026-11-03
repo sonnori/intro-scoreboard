@@ -186,10 +186,14 @@
       <form method="dialog" class="sheet__form" id="playerForm">
         <h3 id="sheetTitle">เพิ่มผู้เล่น</h3>
 
-        <div class="libpick" id="castPick" hidden>
+        <div class="libpick" id="castPick">
           <span class="eyebrow">คลังผู้เล่น <em>CAST</em></span>
           <div class="lib" id="castList"></div>
-          <p class="hint">กดเพื่อใส่ลงการแข่งทันที · กด × มุมบนเพื่อเอาออกจากคลัง</p>
+          <p class="hint" id="castHint">กดเพื่อใส่ลงการแข่งทันที · กด × มุมบนเพื่อเอาออกจากคลัง</p>
+          <p class="hint" id="castEmpty" hidden>
+            ยังว่างอยู่ — ใครที่คุณสร้างด้านล่างจะถูกเก็บเข้าคลังให้เอง
+            เทปหน้าเปิดหน้านี้มาก็กดชื่อเขาทีเดียวลงสนามได้เลย
+          </p>
         </div>
 
         <div class="libpick" id="libPick">

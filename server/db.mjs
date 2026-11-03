@@ -29,6 +29,8 @@ function blank() {
       },
     },
     presets: [],
+    // Cast prepared ahead of the shoot; outlives any single match.
+    cast: [],
   };
 }
 

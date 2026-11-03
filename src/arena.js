@@ -270,6 +270,7 @@ export function createArena(canvas) {
   let shake = 0;
   let burstAge = 99;
   let running = true;
+  let paused = false;
   let rippleSlot = 0;
 
   function resize() {
@@ -290,7 +291,7 @@ export function createArena(canvas) {
   let t = 0;
 
   function frame() {
-    if (!running) return;
+    if (!running || paused) return;
     requestAnimationFrame(frame);
     const dt = Math.min(clock.getDelta(), 0.05);
     t += reduced ? dt * 0.15 : dt;
@@ -332,6 +333,20 @@ export function createArena(canvas) {
     composer.render();
   }
   requestAnimationFrame(frame);
+
+  // An operator's iPad sits on this page all day. Drawing a stage nobody can
+  // see just heats the device and drains the battery, so stop when hidden and
+  // swallow the elapsed time on the way back so nothing lurches.
+  function onVisibility() {
+    const hidden = document.visibilityState === 'hidden';
+    if (hidden === paused) return;
+    paused = hidden;
+    if (!paused) {
+      clock.getDelta();
+      requestAnimationFrame(frame);
+    }
+  }
+  document.addEventListener('visibilitychange', onVisibility);
 
   return {
     setColors(a, b) {
@@ -381,6 +396,7 @@ export function createArena(canvas) {
     },
     dispose() {
       running = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('resize', resize);
       renderer.dispose();
     },

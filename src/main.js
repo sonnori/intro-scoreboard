@@ -20,6 +20,8 @@ const $ = (id) => document.getElementById(id);
 
 let state = defaults();
 let presets = [];
+let cast = [];
+let lastShape = null;
 let booting = true;
 let applyingRemote = false;
 const history = [];
@@ -217,7 +219,49 @@ function render() {
   renderWinner(s);
 
   // Writing back a change that came from another screen would ping-pong forever.
-  if (!booting && !applyingRemote && net.api.authed) net.saveMatch(state);
+  if (!booting && !applyingRemote && net.api.authed) {
+    const shape = shapeSignature();
+    const scoresOnly = shape === lastShape;
+    lastShape = shape;
+    net.saveMatch(state, scoresOnly ? scoreMap() : null);
+  }
+}
+
+/**
+ * Everything about the match except the numbers. Built from ids and lengths
+ * rather than the values themselves so it stays cheap to compute on every
+ * tap — photos are hundreds of kilobytes and must never be stringified here.
+ */
+function shapeSignature() {
+  const r = state.rules;
+  const roster = (key) =>
+    rosterOf(state, key)
+      .map((p) => `${p.id}:${p.name}:${p.photo.length}`)
+      .join(',');
+  return [
+    state.mode,
+    state.matchNo,
+    state.sound ? 1 : 0,
+    r.target,
+    r.deuce ? 1 : 0,
+    r.cap,
+    r.track ? 1 : 0,
+    state.teams.a.name,
+    state.teams.a.color,
+    state.teams.b.name,
+    state.teams.b.color,
+    roster('a'),
+    roster('b'),
+    roster('solo'),
+  ].join('|');
+}
+
+function scoreMap() {
+  const out = {};
+  for (const key of ['a', 'b', 'solo']) {
+    for (const p of rosterOf(state, key)) out[p.id] = p.points;
+  }
+  return out;
 }
 
 function bumpScore(el, value) {
@@ -372,6 +416,7 @@ function openPlayerSheet(team, id) {
   $('sheetTitle').textContent = existing ? 'แก้ไขผู้เล่น' : 'เพิ่มผู้เล่น';
   $('playerName').value = existing?.name || '';
   $('deletePlayer').hidden = !existing;
+  renderCast();
   renderPhotoPicker();
   sheet.showModal();
   if (existing?.photo) loadCropSource(existing.photo);
@@ -548,6 +593,16 @@ $('playerForm').addEventListener('submit', (e) => {
   }
   sheet.close();
   render();
+
+  // Anyone typed in once is kept, so the next taping starts from a full cast.
+  net
+    .addToCast({ name, photo }, cast)
+    .then((next) => {
+      cast = next;
+    })
+    .catch(() => {
+      /* the match is already saved; a missing cast entry can be re-added */
+    });
 });
 
 $('cancelPlayer').addEventListener('click', () => sheet.close());
@@ -804,6 +859,62 @@ window.addEventListener('keydown', (e) => {
 
 /* ── prepared photos ───────────────────────────────────── */
 
+/**
+ * People prepared before the shoot. Tap one and they walk straight into the
+ * match; the × takes them out of the cast once their taping is done.
+ */
+function renderCast() {
+  const host = $('castList');
+  host.textContent = '';
+  $('castPick').hidden = Boolean(editing.id) || cast.length === 0;
+  if ($('castPick').hidden) return;
+
+  for (const person of cast) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'lib__item';
+    card.title = `ใส่ ${person.name} ลงการแข่ง`;
+
+    const ava = document.createElement('span');
+    ava.className = 'lib__ava';
+    if (person.photo) {
+      const img = document.createElement('img');
+      img.src = person.photo;
+      img.alt = '';
+      ava.appendChild(img);
+    } else ava.textContent = person.name.slice(0, 1);
+
+    const label = document.createElement('span');
+    label.className = 'lib__name';
+    label.textContent = person.name;
+
+    const drop = document.createElement('span');
+    drop.className = 'lib__drop';
+    drop.textContent = '×';
+    drop.title = 'เอาออกจากคลัง';
+    drop.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`เอา ${person.name} ออกจากคลังผู้เล่น?`)) return;
+      try {
+        cast = await net.removeFromCast(person.id, cast);
+        renderCast();
+      } catch (err) {
+        alert(`เอาออกไม่สำเร็จ: ${err.message}`);
+      }
+    });
+
+    card.append(ava, label, drop);
+    card.addEventListener('click', () => {
+      const p = makePlayer(person.name);
+      p.photo = person.photo;
+      rosterOf(state, editing.team).push(p);
+      sheet.close();
+      render();
+    });
+    host.appendChild(card);
+  }
+}
+
 function renderPhotoPicker() {
   const host = $('libList');
   host.textContent = '';
@@ -1023,6 +1134,7 @@ function applyAccess() {
   const data = await net.bootstrap(defaults);
   state = hydrate(data.match);
   presets = data.presets || [];
+  cast = data.cast || [];
 
   net.onSaveError((msg) => {
     const label = $('modeLabel');
@@ -1042,6 +1154,21 @@ function applyAccess() {
     presets: (msg) => {
       presets = msg.presets;
       renderPresets();
+    },
+    scores: (msg) => {
+      for (const key of ['a', 'b', 'solo']) {
+        for (const p of rosterOf(state, key)) {
+          const next = msg.scores?.[p.id];
+          if (Number.isFinite(next)) p.points = next;
+        }
+      }
+      applyingRemote = true;
+      render();
+      applyingRemote = false;
+    },
+    cast: (msg) => {
+      cast = msg.cast;
+      if (sheet.open) renderCast();
     },
   });
 

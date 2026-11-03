@@ -88,8 +88,14 @@ async function api(req, res, url) {
   };
 
   if (path === '/api/bootstrap' && method === 'GET') {
-    const { match, presets, version } = db.read();
-    return send(res, 200, { match, presets, version: version || 0, authed: auth.authed(req) });
+    const { match, presets, cast, version } = db.read();
+    return send(res, 200, {
+      match,
+      presets,
+      cast: cast || [],
+      version: version || 0,
+      authed: auth.authed(req),
+    });
   }
 
   // Same shape as the serverless deployment so one client works against both.
@@ -137,6 +143,52 @@ async function api(req, res, url) {
     // Tag the sender so its own echo doesn't bounce back and fight local state.
     broadcast('match', { match, from: req.headers['x-client-id'] || '' });
     return send(res, 200, { ok: true });
+  }
+
+  // Scores change constantly; rosters and photos almost never. Sending only
+  // the numbers keeps a tap at a few hundred bytes instead of re-posting every
+  // avatar in the match.
+  if (path === '/api/scores' && method === 'PATCH') {
+    if (!gate()) return undefined;
+    const { scores } = await readJson(req);
+    if (!scores || typeof scores !== 'object') return send(res, 400, { error: 'รูปแบบไม่ถูกต้อง' });
+
+    const match = db.read().match;
+    const lists = [match.teams.a.players, match.teams.b.players, match.solo?.players || []];
+    for (const list of lists) {
+      for (const player of list) {
+        const next = scores[player.id];
+        if (Number.isFinite(next)) player.points = Math.max(0, Math.trunc(next));
+      }
+    }
+    db.commit();
+    broadcast('scores', { scores, from: req.headers['x-client-id'] || '' });
+    return send(res, 200, { ok: true });
+  }
+
+  if (path === '/api/cast' && (method === 'POST' || method === 'DELETE')) {
+    if (!gate()) return undefined;
+    const data = db.read();
+    data.cast = data.cast || [];
+
+    if (method === 'POST') {
+      const { name, photo } = await readJson(req);
+      if (!name?.trim()) return send(res, 400, { error: 'ต้องมีชื่อ' });
+      const clean = name.trim();
+      const existing = data.cast.find((p) => p.name === clean);
+      // Same person added twice is a correction, not a second entry.
+      if (existing) existing.photo = photo || existing.photo;
+      else data.cast.push({ id: db.newId('C'), name: clean, photo: photo || '', addedAt: Date.now() });
+    } else {
+      const id = url.searchParams.get('id');
+      const before = data.cast.length;
+      data.cast = data.cast.filter((p) => p.id !== id);
+      if (data.cast.length === before) return send(res, 404, { error: 'ไม่พบในคลัง' });
+    }
+
+    db.commit();
+    broadcast('cast', { cast: data.cast });
+    return send(res, 200, { cast: data.cast });
   }
 
   if (path === '/api/presets' && method === 'POST') {

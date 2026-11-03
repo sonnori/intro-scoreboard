@@ -10,6 +10,7 @@
 const KEY = {
   match: 'intro-scoreboard/v3',
   presets: 'intro-scoreboard/presets',
+  cast: 'intro-scoreboard/cast',
   unlocked: 'intro-scoreboard/unlocked',
 };
 
@@ -83,13 +84,14 @@ export async function bootstrap(defaults) {
     api.mode = 'server';
     api.authed = Boolean(data.authed);
     api.degraded = Boolean(data.degraded);
-    return { match: data.match, presets: data.presets || [] };
+    return { match: data.match, presets: data.presets || [], cast: data.cast || [] };
   } catch {
     api.mode = 'local';
     api.authed = local.get(KEY.unlocked, false) === true;
     return {
       match: local.get(KEY.match, null) || defaults(),
       presets: local.get(KEY.presets, []),
+      cast: local.get(KEY.cast, []),
     };
   }
 }
@@ -97,20 +99,38 @@ export async function bootstrap(defaults) {
 /* ── live match ────────────────────────────────────────── */
 
 let saveTimer;
-let pending = null;
+let pending = null; // the whole match, kept as the offline fallback
+let pendingScores = null; // id → points, when only the numbers moved
+let pendingFull = false; // a structural change in the batch forces a full save
 
-export function saveMatch(match) {
+/**
+ * Scores change on every tap; rosters, photos and rules almost never. Passing
+ * `scores` sends a few hundred bytes instead of re-posting every avatar — but
+ * any structural change queued in the same window wins and sends everything.
+ *
+ * @param {object} match the whole match
+ * @param {object|null} scores id → points when nothing else changed
+ */
+export function saveMatch(match, scores = null) {
   if (api.mode === 'local') {
     local.set(KEY.match, match);
     return;
   }
   pending = match;
+  if (scores) pendingScores = scores;
+  else pendingFull = true;
+
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     const payload = pending;
+    const numbers = pendingScores;
+    const full = pendingFull || !numbers;
     pending = null;
+    pendingScores = null;
+    pendingFull = false;
     try {
-      await call('/api/match', { method: 'PUT', body: payload });
+      if (full) await call('/api/match', { method: 'PUT', body: payload });
+      else await call('/api/scores', { method: 'PATCH', body: { scores: numbers } });
     } catch (e) {
       // Losing the server mid-show must not lose the score.
       local.set(KEY.match, payload);
@@ -215,6 +235,33 @@ export async function logout() {
   }
   await call('/api/logout', { method: 'POST' });
   api.authed = false;
+}
+
+/* ── cast: people prepared before the shoot ────────────── */
+
+/** Resolves to the whole list either way, so callers assign and never append. */
+export async function addToCast(entry, cast) {
+  if (api.mode === 'local') {
+    const at = cast.findIndex((p) => p.name === entry.name);
+    const next =
+      at === -1
+        ? [...cast, { id: `C${Date.now().toString(36)}`, addedAt: Date.now(), ...entry }]
+        : cast.map((p, i) => (i === at ? { ...p, photo: entry.photo || p.photo } : p));
+    local.set(KEY.cast, next);
+    return next;
+  }
+  const { cast: next } = await call('/api/cast', { method: 'POST', body: entry });
+  return next;
+}
+
+export async function removeFromCast(id, cast) {
+  if (api.mode === 'local') {
+    const next = cast.filter((p) => p.id !== id);
+    local.set(KEY.cast, next);
+    return next;
+  }
+  const { cast: next } = await call(`/api/cast?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return next;
 }
 
 /* ── presets ───────────────────────────────────────────── */

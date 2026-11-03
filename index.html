@@ -186,8 +186,14 @@
       <form method="dialog" class="sheet__form" id="playerForm">
         <h3 id="sheetTitle">เพิ่มผู้เล่น</h3>
 
+        <div class="libpick" id="castPick" hidden>
+          <span class="eyebrow">คลังผู้เล่น <em>CAST</em></span>
+          <div class="lib" id="castList"></div>
+          <p class="hint">กดเพื่อใส่ลงการแข่งทันที · กด × มุมบนเพื่อเอาออกจากคลัง</p>
+        </div>
+
         <div class="libpick" id="libPick">
-          <span class="eyebrow">รูปที่เตรียมไว้ <em>PHOTOS</em></span>
+          <span class="eyebrow" id="photosEyebrow">สร้างคนใหม่จากรูปที่เตรียมไว้ <em>PHOTOS</em></span>
           <div class="lib" id="libList"></div>
           <p class="hint" id="libEmpty" hidden>
             ยังไม่มีรูปในโฟลเดอร์ <code>photos/</code> — ลากรูปใส่แล้วสั่ง

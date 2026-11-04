@@ -7,6 +7,8 @@ export default async function handler(req, res) {
   return json(res, 200, {
     match: db.match,
     presets: db.presets,
+    cast: db.cast || [],
+    hidden: db.hidden || [],
     version: db.version || 0,
     authed: authed(req),
     // Surfaced so the board can warn instead of silently drifting out of sync.

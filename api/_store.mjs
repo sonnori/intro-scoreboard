@@ -23,13 +23,19 @@ export function blank() {
     match: {
       matchNo: 1,
       sound: true,
-      rules: { target: 15, deuce: true, cap: 0 },
+      mode: 'team',
+      rules: { target: 15, deuce: true, cap: 0, track: false },
       teams: {
         a: { name: 'ทีมชาวบ้าน', color: '#3B6BFF', players: [] },
         b: { name: 'ทีมศิลปิน', color: '#FF4438', players: [] },
       },
+      solo: { players: [] },
     },
     presets: [],
+    // The player database: people added in the app, plus folder photos removed
+    // from the list. Outlives any single match.
+    cast: [],
+    hidden: [],
   };
 }
 

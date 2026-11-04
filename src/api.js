@@ -200,6 +200,9 @@ function startPolling(handlers, everyMs = 1200) {
   setInterval(async () => {
     // Our own pending write would come back as a change and undo local edits.
     if (busy || pending) return;
+    // A hidden tab has nothing to show, and each poll is a billable request
+    // against the data store. Resume on the next tick after it comes back.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     busy = true;
     try {
       const { version } = await call('/api/version');

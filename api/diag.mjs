@@ -9,9 +9,12 @@ import { authed } from './_auth.mjs';
 export default async function handler(req, res) {
   if (!authed(req)) return json(res, 401, { error: 'ต้องปลดล็อกก่อน' });
 
-  const candidates = Object.keys(process.env)
-    .filter((n) => /REDIS|UPSTASH|KV_|_REST_API_/.test(n))
-    .sort();
+  const all = Object.keys(process.env).sort();
+  const candidates = all.filter((n) => /REDIS|UPSTASH|KV_|_REST_API_|DATABASE|STORE/i.test(n));
+
+  // ?all=1 lists every variable NAME the function can see — never a value —
+  // for when a connection used a prefix the filter above doesn't expect.
+  const showAll = new URL(req.url, 'http://x').searchParams.get('all') === '1';
 
   let roundTrip = 'ไม่ได้ทดสอบ';
   if (hasStore) {
@@ -30,5 +33,6 @@ export default async function handler(req, res) {
     usingVariable: storeVia,
     storageVariablesPresent: candidates,
     roundTrip,
+    ...(showAll ? { allVariableNames: all } : { variableCount: all.length }),
   });
 }

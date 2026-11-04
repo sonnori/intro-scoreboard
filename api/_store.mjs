@@ -11,11 +11,37 @@
  * API says so plainly in `degraded` rather than pretending to be in sync.
  */
 
-const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+/**
+ * Find the Redis REST credentials whatever the host decided to call them.
+ *
+ * Vercel's docs don't fix the variable names, and a connection with a custom
+ * prefix renames them again (DB1_REST_API_URL and friends). Rather than guess
+ * two spellings and silently fall back to memory, pair up any *_REST_API_URL
+ * with its matching token.
+ */
+function findCredentials(env) {
+  const known = [
+    ['KV_REST_API_URL', 'KV_REST_API_TOKEN'],
+    ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'],
+    ['REDIS_REST_API_URL', 'REDIS_REST_API_TOKEN'],
+  ];
+  for (const [u, t] of known) if (env[u] && env[t]) return { url: env[u], token: env[t], via: u };
+
+  for (const name of Object.keys(env)) {
+    if (!name.endsWith('_REST_API_URL')) continue;
+    const token = `${name.slice(0, -'_URL'.length)}_TOKEN`;
+    if (env[name] && env[token]) return { url: env[name], token: env[token], via: name };
+  }
+  return null;
+}
+
+const creds = findCredentials(process.env);
+const URL_ = creds?.url;
+const TOKEN = creds?.token;
 const KEY = 'scoreboard:db';
 
 export const hasStore = Boolean(URL_ && TOKEN);
+export const storeVia = creds?.via || null;
 
 export function blank() {
   return {

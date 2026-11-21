@@ -78,6 +78,24 @@ function broadcast(type, payload) {
 
 /* ── API ───────────────────────────────────────────────── */
 
+/**
+ * Build a stored preset from whatever the client sent.
+ *
+ * The fields are listed rather than spread so a caller can't overwrite `id` or
+ * `createdAt` — but the list is the whole record, so forgetting one loses it
+ * silently. `mode` and `solo` were missing, which is why a saved solo line-up
+ * came back empty.
+ */
+const presetFrom = ({ id, name, mode, teams, rules, solo }) => ({
+  id,
+  name: name.trim(),
+  mode: mode === 'solo' ? 'solo' : 'team',
+  teams,
+  rules,
+  solo: Array.isArray(solo) ? solo : [],
+  createdAt: Date.now(),
+});
+
 async function api(req, res, url) {
   const path = url.pathname;
   const method = req.method;
@@ -203,9 +221,9 @@ async function api(req, res, url) {
 
   if (path === '/api/presets' && method === 'POST') {
     if (!gate()) return undefined;
-    const { name, teams, rules } = await readJson(req);
+    const { name, mode, teams, rules, solo } = await readJson(req);
     if (!name?.trim()) return send(res, 400, { error: 'ต้องตั้งชื่อ preset' });
-    const preset = { id: db.newId('P'), name: name.trim(), teams, rules, createdAt: Date.now() };
+    const preset = presetFrom({ id: db.newId('P'), name, mode, teams, rules, solo });
     db.read().presets.push(preset);
     db.commit();
     broadcast('presets', { presets: db.read().presets });

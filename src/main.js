@@ -1250,8 +1250,12 @@ function renderPresets() {
 
     const meta = document.createElement('span');
     meta.className = 'preset__meta';
+    // A solo preset keeps its line-up in `solo`, a team preset in `teams`.
+    // Counting only the teams made every solo card read "0 คน".
     const count =
-      (preset.teams?.a?.players?.length || 0) + (preset.teams?.b?.players?.length || 0);
+      preset.mode === 'solo'
+        ? preset.solo?.length || 0
+        : (preset.teams?.a?.players?.length || 0) + (preset.teams?.b?.players?.length || 0);
     meta.textContent = `${count} คน · ${preset.rules?.target ?? '?'} แต้ม`;
 
     const use = document.createElement('button');

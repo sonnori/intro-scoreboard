@@ -28,6 +28,19 @@ export const SOLO_COLORS = [
 export const soloColor = (i) => SOLO_COLORS[i % SOLO_COLORS.length];
 
 /**
+ * A colour for someone joining a solo match.
+ *
+ * Solo colours belong to the person, not to the slot they stand in, so that
+ * reordering the cards doesn't repaint everybody mid-show. Pick the first one
+ * nobody is already wearing; once the palette is full they start to repeat,
+ * which is still better than handing out a duplicate while a colour is free.
+ */
+export function freeSoloColor(players) {
+  const taken = new Set(players.map((p) => p.color));
+  return SOLO_COLORS.find((c) => !taken.has(c)) || soloColor(players.length);
+}
+
+/**
  * Shortcuts are bound to physical key positions, not characters: an operator
  * running a Thai keyboard layout still gets Q W E R T where the caps say so.
  * KEYS is what we print on the card, CODES is what we listen for.
@@ -72,7 +85,12 @@ export function hydrate(saved) {
       a: { ...base.teams.a, ...saved.teams?.a },
       b: { ...base.teams.b, ...saved.teams?.b },
     },
-    solo: { players: saved.solo?.players || [] },
+    solo: {
+      // A match saved before colours were a player's own property: give each
+      // one the colour their position was already painting, so nothing on
+      // screen moves when this version loads it.
+      players: (saved.solo?.players || []).map((p, i) => ({ ...p, color: p.color || soloColor(i) })),
+    },
   };
 }
 

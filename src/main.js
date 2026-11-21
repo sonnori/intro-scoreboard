@@ -12,6 +12,7 @@ import {
   makePlayer,
   rosterOf,
   soloColor,
+  freeSoloColor,
 } from './store.js';
 import * as net from './api.js';
 import { PHOTOS } from './photos.js';
@@ -56,7 +57,16 @@ function sideOf(key, id) {
 
 function colorOf(key, id) {
   if (key !== 'solo') return state.teams[key].color;
-  return soloColor(rosterOf(state, 'solo').findIndex((p) => p.id === id));
+  const list = rosterOf(state, 'solo');
+  const at = list.findIndex((p) => p.id === id);
+  return list[at]?.color || soloColor(at);
+}
+
+/** Add a player to a roster, handing a solo entrant a colour of their own. */
+function joinRoster(key, player) {
+  const list = rosterOf(state, key);
+  if (key === 'solo') player.color = freeSoloColor(list);
+  list.push(player);
 }
 
 function award(team, id, delta, originEl) {
@@ -172,8 +182,9 @@ function buildRoster(team) {
     card.append(ava, name, pts, edit, minus, grip);
 
     if (team === 'solo') {
-      // Each competitor carries their own colour; there is no team to inherit from.
-      card.style.setProperty('--tc', soloColor(i));
+      // Each competitor carries their own colour; there is no team to inherit
+      // from, and it travels with them when the running order changes.
+      card.style.setProperty('--tc', p.color || soloColor(i));
       const rank = document.createElement('span');
       rank.className = 'player__rank';
       rank.dataset.rank = p.id;
@@ -847,7 +858,7 @@ $('playerForm').addEventListener('submit', (e) => {
   } else {
     const p = makePlayer(name);
     p.photo = photo;
-    rosterOf(state, editing.team).push(p);
+    joinRoster(editing.team, p);
   }
   sheet.close();
   render();
@@ -1089,7 +1100,7 @@ function slotFor(e, team) {
 }
 
 window.addEventListener('keydown', (e) => {
-  const typing = e.target.matches('input, textarea') || sheet.open;
+  const typing = e.target.matches?.('input, textarea') || sheet.open;
   if (typing) return;
 
   if ((e.metaKey || e.ctrlKey) && isKey(e, 'KeyZ', 'Z')) {
@@ -1206,7 +1217,7 @@ function renderLibrary() {
     card.addEventListener('click', () => {
       const p = makePlayer(person.name);
       p.photo = person.photo;
-      rosterOf(state, editing.team).push(p);
+      joinRoster(editing.team, p);
       sheet.close();
       render();
     });
@@ -1272,7 +1283,7 @@ function snapshotTeam(team) {
   };
 }
 
-const snapshotSolo = () => state.solo.players.map((p) => ({ name: p.name, photo: p.photo }));
+const snapshotSolo = () => state.solo.players.map((p) => ({ name: p.name, photo: p.photo, color: p.color }));
 
 $('savePresetBtn').addEventListener('click', async () => {
   if (!requireControl()) return;
@@ -1315,12 +1326,17 @@ function loadPreset(preset) {
       }),
     };
   };
-  const revive = (list) =>
-    (list || []).map((p) => {
+  const revive = (list) => {
+    const out = [];
+    for (const p of list || []) {
       const made = makePlayer(p.name);
       made.photo = p.photo || '';
-      return made;
-    });
+      // An older preset has no colours saved; hand out what is still free.
+      made.color = p.color || freeSoloColor(out);
+      out.push(made);
+    }
+    return out;
+  };
 
   state = hydrate({
     matchNo: state.matchNo + 1,

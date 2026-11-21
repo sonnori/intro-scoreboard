@@ -126,6 +126,8 @@ function evaluateSolo(state) {
     track: r.track,
     ranked,
     top,
+    // every point is one question somebody answered, so the sum is the count
+    played: players.reduce((n, p) => n + p.points, 0),
     leaderId: leader?.id || null,
     runnerUpId: ranked[1]?.id || null,
     winner,
@@ -161,6 +163,7 @@ export function evaluate(state) {
     track: r.track,
     a,
     b,
+    played: a + b,
     winner,
     winnerName: winner ? state.teams[winner].name : '',
     matchPointA: !r.track && !winner && wins(a + 1, b, r),

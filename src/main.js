@@ -349,10 +349,17 @@ function renderRulesPlate(s) {
   const word = $('targetWord');
   const deuceEl = $('deuceLabel');
 
+  // With no finish line there is nothing to count towards — so the plate
+  // counts what has happened instead. One point is one question somebody
+  // answered, so the running total IS how many questions have been played,
+  // which is the thing the floor keeps asking about between takes.
   if (s.track) {
-    target.hidden = true;
-    deuceEl.hidden = true;
-    word.textContent = 'นับคะแนนอย่างเดียว';
+    target.hidden = false;
+    deuceEl.hidden = false;
+    target.textContent = s.played;
+    word.textContent = 'ข้อแล้ว';
+    deuceEl.textContent = 'นับคะแนนอย่างเดียว';
+    deuceEl.classList.remove('live');
     return;
   }
   target.hidden = false;

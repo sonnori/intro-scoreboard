@@ -161,7 +161,15 @@ function buildRoster(team) {
     minus.title = 'ลบหนึ่งแต้ม';
     minus.textContent = '−';
 
-    card.append(ava, name, pts, edit, minus);
+    const grip = document.createElement('span');
+    grip.className = 'player__grip';
+    grip.dataset.grip = p.id;
+    grip.setAttribute('role', 'button');
+    grip.setAttribute('tabindex', '0');
+    grip.title = 'ลากเพื่อสลับลำดับ';
+    grip.setAttribute('aria-label', `ลากเพื่อสลับลำดับ ${p.name}`);
+
+    card.append(ava, name, pts, edit, minus, grip);
 
     if (team === 'solo') {
       // Each competitor carries their own colour; there is no team to inherit from.
@@ -201,7 +209,9 @@ function render() {
 
   for (const key of rosterKeys()) {
     const sig = rosterSignature(key);
-    if (sig !== rosterSig[key]) {
+    // Rebuilding mid-drag would delete the card the operator is holding.
+    // The signature stays stale, so the rebuild happens the moment they drop.
+    if (sig !== rosterSig[key] && !isSorting()) {
       rosterSig[key] = sig;
       buildRoster(key);
     }
@@ -409,8 +419,223 @@ document.querySelector('.board').addEventListener('click', (e) => {
     e.stopPropagation();
     return award(card.dataset.team, minusId, -1);
   }
+  if (e.target.closest('[data-grip]')) return e.stopPropagation();
   if (card) award(card.dataset.team, card.dataset.id, 1, card);
 });
+
+/* ── running order ─────────────────────────────────────── */
+
+/**
+ * Drag a card to change the running order.
+ *
+ * Pointer events rather than HTML5 drag-and-drop: the operator works from an
+ * iPad and iOS has never supported that API. A touch may only start a drag
+ * from the grip, because the board scrolls on a short screen and a swipe that
+ * began on a card has to stay a scroll. A mouse has a wheel for that, so it
+ * can pick the card up anywhere.
+ *
+ * A card is only ever moved among its own roster element's children, and that
+ * is the whole of the "same team only" rule — team A and team B are separate
+ * elements, so there is nowhere else for a card to go.
+ */
+
+/** How far the pointer must travel before a tap becomes a drag. */
+const DRAG_SLOP = 9;
+
+const sorting = { card: null, host: null, key: null, id: 0, grabX: 0, grabY: 0, baseX: 0, baseY: 0, moved: false };
+
+const isSorting = () => Boolean(sorting.card);
+
+/** Set after a drag so the click it ends with doesn't also score a point. */
+let swallowClickUntil = 0;
+
+const cardsIn = (host) => [...host.querySelectorAll('.player')];
+
+/** Where the card sits with its drag transform taken off. */
+function restingRect(el) {
+  const had = el.style.transform;
+  el.style.transform = 'none';
+  const box = el.getBoundingClientRect();
+  el.style.transform = had;
+  return box;
+}
+
+function setRoster(key, players) {
+  if (key === 'solo') state.solo.players = players;
+  else state.teams[key].players = players;
+}
+
+/**
+ * How many cards the pointer has travelled past, counted in reading order.
+ * Cards wrap onto more than one row, so a card is behind the pointer when the
+ * pointer is on a later row, or on the same row and past the card's middle.
+ */
+function dropIndex(px, py) {
+  let index = 0;
+  for (const el of cardsIn(sorting.host)) {
+    if (el === sorting.card) continue;
+    const r = el.getBoundingClientRect();
+    if (py > r.bottom || (py >= r.top && px > r.left + r.width / 2)) index++;
+  }
+  return index;
+}
+
+/** Move the held card to `index` and slide the cards it displaced. */
+function applyOrder(index) {
+  const all = cardsIn(sorting.host);
+  if (all.indexOf(sorting.card) === index) return;
+  const others = all.filter((el) => el !== sorting.card);
+  const before = new Map(others.map((el) => [el, el.getBoundingClientRect()]));
+
+  sorting.host.insertBefore(sorting.card, others[index] || sorting.host.querySelector('.addPlayer'));
+
+  // Clear any shuffle still in flight first, so the rects read below are the
+  // real resting places rather than one frame of the last animation.
+  for (const el of others) {
+    el.style.transition = 'none';
+    el.style.transform = '';
+  }
+  const after = new Map(others.map((el) => [el, el.getBoundingClientRect()]));
+
+  // Start each displaced card where it just was, then let it travel.
+  for (const el of others) {
+    const was = before.get(el);
+    const now = after.get(el);
+    const dx = was.left - now.left;
+    const dy = was.top - now.top;
+    if (dx || dy) el.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+  void sorting.host.offsetWidth; // one reflow commits those as the start state
+  for (const el of others) {
+    el.style.transition = '';
+    el.style.transform = '';
+  }
+
+  // The held card now rests somewhere else; re-anchor it so it stays under
+  // the pointer instead of jumping by the width of a card.
+  const rest = restingRect(sorting.card);
+  sorting.baseX = rest.left;
+  sorting.baseY = rest.top;
+}
+
+function startSort(e) {
+  if (isSorting() || e.button > 0) return;
+  const card = e.target.closest('.player');
+  if (!card || e.target.closest('[data-edit], [data-minus]')) return;
+  // Touch and pen have to grab the grip; a swipe over the card body is a scroll.
+  if (e.pointerType !== 'mouse' && !e.target.closest('[data-grip]')) return;
+  const host = card.parentElement;
+  if (cardsIn(host).length < 2) return; // nothing to trade places with
+  if (!requireControl()) return;
+
+  const box = card.getBoundingClientRect();
+  sorting.card = card;
+  sorting.host = host;
+  sorting.key = card.dataset.team;
+  sorting.id = e.pointerId;
+  sorting.grabX = e.clientX - box.left;
+  sorting.grabY = e.clientY - box.top;
+  sorting.baseX = box.left;
+  sorting.baseY = box.top;
+  sorting.moved = false;
+  // Keeps the moves coming even when the pointer outruns the card. Browsers
+  // throw here for a pointer that has already gone; losing capture is
+  // survivable, dropping the drag is not.
+  try {
+    card.setPointerCapture(e.pointerId);
+  } catch {
+    /* no capture: the window listeners still see the moves */
+  }
+}
+
+function moveSort(e) {
+  if (!isSorting() || e.pointerId !== sorting.id) return;
+
+  if (!sorting.moved) {
+    const dx = e.clientX - sorting.grabX - sorting.baseX;
+    const dy = e.clientY - sorting.grabY - sorting.baseY;
+    if (Math.hypot(dx, dy) < DRAG_SLOP) return; // a tap that wobbled is still a tap
+    sorting.moved = true;
+    sorting.card.classList.add('is-dragging');
+    sorting.host.classList.add('roster--sorting');
+    document.body.classList.add('sorting');
+  }
+
+  e.preventDefault();
+  applyOrder(dropIndex(e.clientX, e.clientY));
+  sorting.card.style.transform = `translate(${e.clientX - sorting.grabX - sorting.baseX}px, ${
+    e.clientY - sorting.grabY - sorting.baseY
+  }px)`;
+}
+
+function endSort(e) {
+  if (!isSorting() || (e && e.pointerId !== sorting.id)) return;
+  const { card, host, key, moved } = sorting;
+  try {
+    card.releasePointerCapture(sorting.id);
+  } catch {
+    /* never captured, or already gone */
+  }
+  card.style.transform = '';
+  card.classList.remove('is-dragging');
+  host.classList.remove('roster--sorting');
+  document.body.classList.remove('sorting');
+  sorting.card = null;
+  if (!moved) return;
+
+  swallowClickUntil = performance.now() + 400;
+  const order = cardsIn(host).map((el) => el.dataset.id);
+  const list = rosterOf(state, key);
+  const next = order.map((id) => list.find((p) => p.id === id)).filter(Boolean);
+  // Anything unaccounted for means the DOM and the match disagree; the match
+  // wins, and the rebuild below puts the cards back where it says they go.
+  if (next.length === list.length && next.some((p, i) => p !== list[i])) setRoster(key, next);
+  rosterSig[key] = null;
+  render();
+}
+
+/** Put the cards back the way the match has them and forget the drag. */
+function cancelSort() {
+  if (!isSorting()) return;
+  const key = sorting.key;
+  sorting.moved = false;
+  endSort();
+  rosterSig[key] = null;
+  render();
+}
+
+/** Move one player a single place, for anyone working without a pointer. */
+function nudgeOrder(key, id, step) {
+  if (!requireControl()) return;
+  const list = rosterOf(state, key);
+  const from = list.findIndex((p) => p.id === id);
+  const to = from + step;
+  if (from === -1 || to < 0 || to >= list.length) return;
+  const next = [...list];
+  next.splice(to, 0, ...next.splice(from, 1));
+  setRoster(key, next);
+  render();
+  // The rebuild replaced the node, so hand focus back to the card that moved.
+  document.querySelector(`.player[data-id="${id}"]`)?.focus();
+}
+
+$('board').addEventListener('pointerdown', startSort);
+window.addEventListener('pointermove', moveSort);
+window.addEventListener('pointerup', endSort);
+window.addEventListener('pointercancel', endSort);
+
+// A drag ends in a click on the card underneath. Catch it before the board's
+// own handler turns the drop into a point nobody scored.
+document.addEventListener(
+  'click',
+  (e) => {
+    if (performance.now() > swallowClickUntil) return;
+    swallowClickUntil = 0;
+    e.stopPropagation();
+    e.preventDefault();
+  },
+  true
+);
 
 /* ── player sheet ──────────────────────────────────────── */
 
@@ -871,13 +1096,24 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return undo();
   }
+  // Alt+← / Alt+→ walks the focused card along its own roster, so the running
+  // order can be set without a pointer at all.
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    const card = document.activeElement?.closest?.('.player');
+    if (!card) return;
+    e.preventDefault();
+    return nudgeOrder(card.dataset.team, card.dataset.id, e.key === 'ArrowLeft' ? -1 : 1);
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
 
   if (isKey(e, 'KeyH', 'H')) {
     e.preventDefault();
     return toggleClean();
   }
-  if (e.key === 'Escape') return openDrawer(false);
+  if (e.key === 'Escape') {
+    if (isSorting()) return cancelSort();
+    return openDrawer(false);
+  }
 
   for (const team of rosterKeys()) {
     const i = slotFor(e, team);

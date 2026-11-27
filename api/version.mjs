@@ -1,4 +1,4 @@
-import { read, json } from './_store.mjs';
+import { readVersion, json } from './_store.mjs';
 
 /**
  * Tiny endpoint the board polls; the full state is only fetched when this moves.
@@ -8,9 +8,8 @@ import { read, json } from './_store.mjs';
  * the variable at build time; locally there is none, hence 'dev'.
  */
 export default async function handler(req, res) {
-  const db = await read();
   return json(res, 200, {
-    version: db.version || 0,
+    version: await readVersion(),
     build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'dev',
   });
 }

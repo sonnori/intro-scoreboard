@@ -39,6 +39,10 @@ const creds = findCredentials(process.env);
 const URL_ = creds?.url;
 const TOKEN = creds?.token;
 const KEY = 'scoreboard:db';
+// The same number as `version` inside the document, kept on its own so the
+// board's poll can ask "has anything changed?" without pulling the document —
+// avatars and all — across the wire every time.
+const VERSION_KEY = 'scoreboard:version';
 
 export const hasStore = Boolean(URL_ && TOKEN);
 export const storeVia = creds?.via || null;
@@ -111,8 +115,31 @@ export async function read() {
 export async function write(db) {
   const next = { ...db, version: (db.version || 0) + 1 };
   memory = next;
-  if (hasStore) await redis(['SET', KEY, JSON.stringify(next)]);
+  // One MSET rather than two SETs: the counter can never be left disagreeing
+  // with the document it describes.
+  if (hasStore) await redis(['MSET', KEY, JSON.stringify(next), VERSION_KEY, String(next.version)]);
   return next;
+}
+
+/**
+ * Just the version number — what the board asks for every 1.2 seconds.
+ *
+ * This used to go through `read()`, which fetches the whole document. With
+ * cropped avatars stored inline that document runs to megabytes, so every open
+ * board was pulling megabytes per second out of the store and the plan's
+ * bandwidth was being spent on a single integer. Now it reads a few bytes.
+ */
+export async function readVersion() {
+  if (!hasStore) return (memory ??= blank()).version || 0;
+  try {
+    const raw = await redis(['GET', VERSION_KEY]);
+    if (raw !== null && raw !== undefined) return Number(raw) || 0;
+  } catch {
+    return (memory ??= blank()).version || 0;
+  }
+  // No counter yet — a database written by an older build. Pay for one full
+  // read; the next write lays the counter down and this stops happening.
+  return (await read()).version || 0;
 }
 
 /**

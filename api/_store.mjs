@@ -43,6 +43,19 @@ const KEY = 'scoreboard:db';
 export const hasStore = Boolean(URL_ && TOKEN);
 export const storeVia = creds?.via || null;
 
+/**
+ * The host we're talking to, so a swapped-out database is visible at a glance.
+ * The hostname identifies which Upstash database this is; the token, which is
+ * the actual secret, is never exposed.
+ */
+export const storeHost = (() => {
+  try {
+    return URL_ ? new URL(URL_).host : null;
+  } catch {
+    return null;
+  }
+})();
+
 export function blank() {
   return {
     version: 0,
@@ -94,6 +107,53 @@ export async function write(db) {
   memory = next;
   if (hasStore) await redis(['SET', KEY, JSON.stringify(next)]);
   return next;
+}
+
+/**
+ * A read-only look at the store, for when the board comes up empty.
+ *
+ * `read()` swallows every failure and hands back a blank match, so "somebody
+ * deleted the data" and "we can't reach the database at all" look identical
+ * from the outside — and they call for opposite responses. This reports the
+ * raw answer instead: whether the key is there, how big it is, how many keys
+ * the database holds, and any error verbatim. It never writes, because a write
+ * on a store that is merely unreachable would destroy the very data in doubt.
+ */
+export async function inspect() {
+  if (!hasStore) return { configured: false };
+  const out = { configured: true, host: storeHost, key: KEY };
+
+  try {
+    const raw = await redis(['GET', KEY]);
+    out.keyExists = raw !== null && raw !== undefined;
+    out.bytes = raw ? raw.length : 0;
+    if (raw) {
+      try {
+        const doc = JSON.parse(raw);
+        out.version = doc.version ?? null;
+        out.holds = {
+          cast: doc.cast?.length ?? 0,
+          presets: doc.presets?.length ?? 0,
+          soloPlayers: doc.match?.solo?.players?.length ?? 0,
+          teamPlayers: (doc.match?.teams?.a?.players?.length ?? 0) + (doc.match?.teams?.b?.players?.length ?? 0),
+        };
+      } catch (e) {
+        out.parseError = e.message;
+      }
+    }
+  } catch (e) {
+    out.readError = e.message;
+  }
+
+  // How many keys the database holds at all: separates "our key was deleted"
+  // from "this is a brand new, empty database".
+  try {
+    out.keysInDatabase = await redis(['DBSIZE']);
+  } catch (e) {
+    out.dbsizeError = e.message;
+  }
+
+  return out;
 }
 
 export function newId(prefix) {

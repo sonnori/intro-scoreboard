@@ -86,7 +86,13 @@ async function redis(command) {
     headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
     body: JSON.stringify(command),
   });
-  if (!res.ok) throw new Error(`redis ${res.status}`);
+  if (!res.ok) {
+    // The status alone says almost nothing — a 403 could be a dead token, a
+    // quota, or a suspended account, and they need different fixes. The body
+    // says which, so carry it along instead of throwing it away.
+    const why = await res.text().catch(() => '');
+    throw new Error(`redis ${res.status}${why ? `: ${why.slice(0, 300)}` : ''}`);
+  }
   const { result } = await res.json();
   return result;
 }
